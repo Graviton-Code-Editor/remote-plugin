@@ -5,19 +5,8 @@
 	"author": "Marc Espín Sanz",
 	"version": "0.1.0",
 	"main": "index.js",
-	"mainSrc": "index.js",
-	"mainDev": "./dist/index.js",
-	"scripts": {
-		"watch": "gvsdk --entry package.json --target plugin",
-		"build": "gvsdk --entry package.json --target plugin --mode release"
-	},
 	"dependencies": {
-		"dat-swarm-defaults": "^1.0.2",
-		"discovery-swarm": "^6.1.0",
-		"get-port": "^5.1.1",
-		"strong-cryptor": "^2.2.0"
-	},
-	"devDependencies": {
-		"@gveditor/sdk": "^0.1.5"
+		"express": "^4.17.1",
+		"hyperswarm": "^2.14.0"
 	}
 }
