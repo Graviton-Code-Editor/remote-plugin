@@ -24,9 +24,10 @@ swarm.join(topic, {
 })
 
 swarm.on('connection', (socket, details) => {
+	const isMe = details.client
 	socket.on("error", err =>{
 		process.send({
-			type: 'error',
+			type: 'err',
 			content: err
 		})
 		process.send({
@@ -35,15 +36,17 @@ swarm.on('connection', (socket, details) => {
 		})
 	})
 	socket.on("data", data =>{
-		process.send(JSON.parse(data))
+		if(data && typeof data == 'object') process.send(JSON.parse(data))
 	})
 	process.send({
-		type: 'userJoined',
+		type: 'userFound',
 		content: ''
 	})
-	process.on('message', data =>{
-		socket.write(JSON.stringify(data))
-	})
+	if( !isMe ){
+		process.on('message', data =>{
+			socket.write(JSON.stringify(data))
+		})
+	}
 })
 
 swarm.on('disconnection', (socket, info) => {

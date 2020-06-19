@@ -25,6 +25,8 @@ const executeServer = (API,room,password) => {
 		console.log(`child process exited with code ${code}`);
 	});
 	
+	console.log(subprocess)
+	
 	const server = app.listen(Number(clientPort))
 	
 	emitter.on('message',data =>{
@@ -45,8 +47,11 @@ function entry(API){
 		action: async function(){
 			const { room, password } = await askForConfig(API) 
 			const emitter = executeServer(API,room,password)
-			emitter.on('userJoined', async ({ type}) => {
-				console.log('New user joined the room!')
+			emitter.on('userFound', async ({ type}) => {
+				console.log(`User found in room: '${room}'`)
+			})
+			emitter.on('info', (a) => {
+				console.log(a)
 			})
 			emitter.on('userLeft', async ({ type}) => {
 				console.log('A user left the room!')
@@ -74,6 +79,7 @@ function entry(API){
 				console.log(err)
 			})
 			RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
+				console.log("EMITTED")
 				emitter.emit('message',{
 					type: 'openedFolder',
 					content: folderPath
@@ -92,11 +98,14 @@ function entry(API){
 		action: async function(){
 			const { room, password } = await askForConfig(API) 
 			const emitter = executeServer(API,room,password)
-			emitter.on('userJoined', async ({ type}) => {
-				console.log('New user joined the room!')
+			emitter.on('userFound', async ({ type}) => {
+				console.log(`User found in room: '${room}'`)
 			})
 			emitter.on('err', async (err) => {
 				console.log(err)
+			})
+			emitter.on('info', (a) => {
+				console.log(a)
 			})
 			new StatusBarItem({
 				label: 'stop',
@@ -119,11 +128,9 @@ const createSidePanel = (emitter,API) => {
 			`
 		},
 		panel(){
-			
 			function mounted(){
-				console.log(emitter)
 				emitter.on('openedFolder', async (folderPath) => {
-					console.log(folderPath)
+					console.log("I CONFIRM")
 					let itemOpened = false
 					const remoteExplorer = new Explorer({
 						items:[
@@ -140,7 +147,6 @@ const createSidePanel = (emitter,API) => {
 							}
 						]
 					})
-					console.log(remoteExplorer)
 					puffin.render(remoteExplorer,this)
 				})
 			}
