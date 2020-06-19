@@ -2,10 +2,9 @@ const express = require('express')
 const app = express()
 
 const port = process.argv[2]
-console.log(port)
 
 app.get('/', function (req, res) {
-	//res.send('Hello World')
+	
 })
 
 const hyperswarm = require('hyperswarm')
@@ -34,14 +33,14 @@ swarm.on('connection', (socket, details) => {
 		})
 	})
 	socket.on("data", data =>{
-		process.send(data)
+		process.send(JSON.parse(data))
 	})
 	process.send({
 		type: 'userJoined',
 		content: ''
 	})
 	process.on('message', data =>{
-		socket.write(data)
+		socket.write(JSON.stringify(data))
 	})
 })
 
