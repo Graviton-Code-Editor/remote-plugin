@@ -1,16 +1,17 @@
 const express = require("express")
+const fs = require("fs")
+const { join, basename, dirname } = require("path")
 
-const executeServer = (API) => {
+const executeServer = (API,room,password) => {
 	const { puffin } = API
 	const express = require('express')
 	const { fork }  = require("electron").remote.require("child_process")
-	const { join } = require("path")
-	
+
 	const emitter = new puffin.state({})
 	const app = express()
 	const clientPort = `${Math.random()*1000}`.substring(13)
 	const serverPort = `${Math.random()*1000}`.substring(13)
-	const subprocess = fork(join(__dirname,"./server.js"),[serverPort])
+	const subprocess = fork(join(__dirname,"./server.js"),[serverPort,room,password])
 
 	console.log(clientPort,serverPort)
 	
@@ -42,7 +43,8 @@ function entry(API){
 	new StatusBarItem({
 		label: 'server',
 		action: async function(){
-			const emitter = executeServer(API)
+			const { room, password } = await askForConfig(API) 
+			const emitter = executeServer(API,room,password)
 			emitter.on('userJoined', async ({ type}) => {
 				console.log('New user joined the room!')
 			})
@@ -50,20 +52,31 @@ function entry(API){
 				console.log('A user left the room!')
 			})
 			emitter.on('listFolder', async (folderPath) => {
-				fs.readdir(dir,(err, list)=>{
-					process.send({
+				fs.readdir(folderPath,(err, list)=>{
+					const computedItems = list.map( item => {
+						const directory = join(folderPath,item)
+						return {
+							name: item,
+							directory,
+							isFolder: fs.lstatSync(directory).isDirectory()
+						}
+					})
+					emitter.emit('message',{
 						type: 'returnListFolder',
-						content: list
+						content:{
+							folderPath,
+							folderItems: computedItems
+						}
 					})
 				})
+			})
+			emitter.on('err', async (err) => {
+				console.log(err)
 			})
 			RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
 				emitter.emit('message',{
 					type: 'openedFolder',
 					content: folderPath
-				})
-				emitter.on('returnListFolder', async (dirs) => {
-					console.log(dirs)
 				})
 			})
 			new StatusBarItem({
@@ -77,9 +90,13 @@ function entry(API){
 	new StatusBarItem({
 		label: 'client',
 		action: async function(){
-			const emitter = executeServer(API)
+			const { room, password } = await askForConfig(API) 
+			const emitter = executeServer(API,room,password)
 			emitter.on('userJoined', async ({ type}) => {
 				console.log('New user joined the room!')
+			})
+			emitter.on('err', async (err) => {
+				console.log(err)
 			})
 			new StatusBarItem({
 				label: 'stop',
@@ -87,12 +104,116 @@ function entry(API){
 					emitter.emit('close')
 				}
 			})
-			emitter.on('openedFolder', async (folderPath) => {
-				console.log('Somebody opened ', folderPath)
-			})
+			createSidePanel(emitter,API)
 		}
 	})
+}
 
+
+const createSidePanel = (emitter,API) => {
+	const { puffin, SidePanel, Explorer, RunningConfig } = API
+	new SidePanel({
+		icon(){
+			return  puffin.element`
+				<i>RC</i>
+			`
+		},
+		panel(){
+			
+			function mounted(){
+				console.log(emitter)
+				emitter.on('openedFolder', async (folderPath) => {
+					console.log(folderPath)
+					let itemOpened = false
+					const remoteExplorer = new Explorer({
+						items:[
+							{
+								label: basename(folderPath),
+								items: [],
+								action: async function(e,{ setItems }){
+									if( !itemOpened ){
+										const items = await getItemsInFolder(emitter,folderPath,API)
+										setItems(items)
+									}
+									itemOpened = !itemOpened
+								}
+							}
+						]
+					})
+					console.log(remoteExplorer)
+					puffin.render(remoteExplorer,this)
+				})
+			}
+			return puffin.element`
+				<div mounted="${mounted}"/>
+			`
+		}
+	})
+}
+
+const getItemsInFolder = async (emitter,folderPath,API) => {
+	const { puffin, SidePanel, Explorer, RunningConfig } = API
+	return new Promise((resolve, reject) => {
+		emitter.emit('message',{
+			type: 'listFolder',
+			content: folderPath
+		})
+		emitter.on('returnListFolder',({ folderPath, folderItems })=>{
+			resolve(folderItems.map( ({ directory, name, isFolder}) => {
+				let itemOpened = false
+				const itemData = {
+					label: name,
+					action: async function(e,{ setItems }){
+						if( isFolder ){
+							if( !itemOpened) {
+								const items = await getItemsInFolder(emitter,directory,API)
+								setItems(items)
+							}
+						}else{
+							
+							
+						}
+						itemOpened = !itemOpened
+					}
+				}
+				if(isFolder){
+					itemData.items = []
+				}
+				return itemData
+			}))
+		})
+	})
+}
+
+
+const askForConfig = ({puffin, Dialog }) => {
+	return new Promise((resolve,reject)=>{
+		const dialog = new Dialog({
+			title: 'Config',
+			component(){
+				return puffin.element`
+					<div>
+						<input placeHolder="room" id="room"/>
+						<input type="password" id="password"/>
+					</div>
+				`
+			},
+			buttons:[
+				{
+					label: 'Connect',
+					action(){
+						const room = document.getElementById('room').value || 'public'
+						const password = document.getElementById('password').value.repeat(32).substring(0,32)
+						resolve({
+							room,
+							password
+						})
+					}
+				}
+			]
+		})
+		dialog.launch()
+	})
 }
 
 module.exports = { entry }

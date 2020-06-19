@@ -1,19 +1,21 @@
 const express = require('express')
+const hyperswarm = require('hyperswarm')
+const { createHash } = require('crypto')
+const { encrypt, decrypt } = require("strong-cryptor")
+
+
 const app = express()
 
 const port = process.argv[2]
+const room = process.argv[3]
+const pass = process.argv[4]
 
-app.get('/', function (req, res) {
-	
-})
-
-const hyperswarm = require('hyperswarm')
-const { decrypt, encrypt, createHash } = require('crypto')
+app.get('/', function (req, res) {})
 
 const swarm = hyperswarm()
 
 const topic = createHash('sha256')
-	.update('gv')
+	.update(room)
 	.digest()
 
 swarm.join(topic, {
