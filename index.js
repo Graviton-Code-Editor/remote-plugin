@@ -21,6 +21,7 @@ const executeServer = (API,room,password) => {
 	})
 	
 	swarm.on('connection', (socket, details) => {
+		console.log(details,socket)
 		socket.on("error", err =>{
 			console.log(err)
 			if( err ){
@@ -29,7 +30,6 @@ const executeServer = (API,room,password) => {
 			}
 		})
 		socket.on("data", data =>{
-			console.log(data)
 			if( data && typeof data == "object"){
 				const msg = Buffer.from(data).toString()
 				let err = false
@@ -41,23 +41,23 @@ const executeServer = (API,room,password) => {
 				if( !err ){
 					const { type, content} = JSON.parse(msg)
 					emitter.emit(type,content)
+				}else{
+					console.log(err)
 				}
 			}
 		})
-		
 		emitter.on('message',data =>{
-			socket.write(JSON.stringify(data))
+			const msg = JSON.stringify(data)
+			socket.write(msg)
 		})
-		
 	})
-
 	return emitter
 }
 
 function entry(API){
 	const { StatusBarItem, RunningConfig, Explorer, SidePanel, puffin, Tab } = API
 	new StatusBarItem({
-		label: 'server',
+		label: 'Remote',
 		action: async function(){
 			const { room, password } = await askForConfig(API) 
 			const emitter = executeServer(API,room,password)
@@ -76,7 +76,6 @@ function entry(API){
 						const directory = join(folderPath,item)
 						return {
 							name: item,
-							directory,
 							isFolder: fs.lstatSync(directory).isDirectory()
 						}
 					})
@@ -89,48 +88,11 @@ function entry(API){
 					})
 				})
 			})
-			emitter.on('err', async (err) => {
-				console.log(err)
-			})
 			RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
-				console.log("EMITTED")
 				emitter.emit('message',{
 					type: 'openedFolder',
 					content: folderPath
 				})
-			})
-			console.log(()=>{
-				emitter.emit('message', { 
-					type: 'test1',
-					content: { 
-						message: 'Hello!'
-					}
-				})
-			})
-			new StatusBarItem({
-				label: 'stop',
-				action(){
-					emitter.emit('close')
-				}
-			})
-		}
-	})
-	new StatusBarItem({
-		label: 'client',
-		action: async function(){
-			const { room, password } = await askForConfig(API) 
-			const emitter = executeServer(API,room,password)
-			emitter.on('userFound', async ({ type}) => {
-				console.log(`User found in room: '${room}'`)
-			})
-			emitter.on('err', async (err) => {
-				console.log(err)
-			})
-			emitter.on('info', (a) => {
-				console.log(a)
-			})
-			emitter.on('test1', ({ message }) => {
-				console.log('message: ', message)
 			})
 			new StatusBarItem({
 				label: 'stop',
@@ -143,7 +105,6 @@ function entry(API){
 	})
 }
 
-
 const createSidePanel = (emitter,API) => {
 	const { puffin, SidePanel, Explorer, RunningConfig } = API
 	new SidePanel({
@@ -155,7 +116,6 @@ const createSidePanel = (emitter,API) => {
 		panel(){
 			function mounted(){
 				emitter.on('openedFolder', async (folderPath) => {
-					console.log("I CONFIRM")
 					let itemOpened = false
 					const remoteExplorer = new Explorer({
 						items:[
@@ -190,13 +150,14 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 			content: folderPath
 		})
 		emitter.on('returnListFolder',({ folderPath, folderItems })=>{
-			resolve(folderItems.map( ({ directory, name, isFolder}) => {
+			resolve(folderItems.map( ({ name, isFolder}) => {
 				let itemOpened = false
 				const itemData = {
 					label: name,
 					action: async function(e,{ setItems }){
 						if( isFolder ){
 							if( !itemOpened) {
+								const directory = join(folderPath,name)
 								const items = await getItemsInFolder(emitter,directory,API)
 								setItems(items)
 							}
