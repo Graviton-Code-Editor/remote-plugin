@@ -6,7 +6,6 @@
 	"version": "0.1.0",
 	"main": "index.js",
 	"dependencies": {
-		"express": "^4.17.1",
 		"hyperswarm": "^2.14.0",
 		"strong-cryptor": "^2.2.0"
 	}

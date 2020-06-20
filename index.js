@@ -1,40 +1,56 @@
-const express = require("express")
+
 const fs = require("fs")
 const { join, basename, dirname } = require("path")
+const hyperswarm = require('hyperswarm')
+const { createHash, randomBytes } = require('crypto')
+const { encrypt, decrypt } = require("strong-cryptor")
 
 const executeServer = (API,room,password) => {
 	const { puffin } = API
-	const express = require('express')
-	const { fork }  = require("electron").remote.require("child_process")
 
 	const emitter = new puffin.state({})
-	const app = express()
-	const clientPort = `${Math.random()*1000}`.substring(13)
-	const serverPort = `${Math.random()*1000}`.substring(13)
-	const subprocess = fork(join(__dirname,"./server.js"),[serverPort,room,password])
 
-	console.log(clientPort,serverPort)
+	const swarm = hyperswarm()
+	const topic = createHash('sha256')
+		.update(room)
+		.digest()
+
+	swarm.join(topic, {
+		lookup: true, 
+		announce: true 
+	})
 	
-	subprocess.on('message', ({ type, content}) => {
-		emitter.emit(type,content)
-	});
-	subprocess.on('close', code => {
-		console.log(`child process close all stdio with code ${code}`);
-	});
-	subprocess.on('exit', code => {
-		console.log(`child process exited with code ${code}`);
-	});
+	swarm.on('connection', (socket, details) => {
+		socket.on("error", err =>{
+			console.log(err)
+			if( err ){
+				emitter.emit('err',err)
+				emitter.emit('userLeft',err)
+			}
+		})
+		socket.on("data", data =>{
+			console.log(data)
+			if( data && typeof data == "object"){
+				const msg = Buffer.from(data).toString()
+				let err = false
+				try{
+					const { type, content} = JSON.parse(msg)
+				}catch(error){
+					err = error
+				}
+				if( !err ){
+					const { type, content} = JSON.parse(msg)
+					emitter.emit(type,content)
+				}
+			}
+		})
 		
-	const server = app.listen(Number(clientPort))
-	
-	emitter.on('message',data =>{
-		subprocess.send(JSON.stringify(data))
+		emitter.on('message',data =>{
+			socket.write(JSON.stringify(data))
+		})
+		
 	})
-	
-	emitter.on('close',()=>{
-		server.close()
-	})
-	
+
 	return emitter
 }
 
@@ -83,6 +99,14 @@ function entry(API){
 					content: folderPath
 				})
 			})
+			console.log(()=>{
+				emitter.emit('message', { 
+					type: 'test1',
+					content: { 
+						message: 'Hello!'
+					}
+				})
+			})
 			new StatusBarItem({
 				label: 'stop',
 				action(){
@@ -104,6 +128,9 @@ function entry(API){
 			})
 			emitter.on('info', (a) => {
 				console.log(a)
+			})
+			emitter.on('test1', ({ message }) => {
+				console.log('message: ', message)
 			})
 			new StatusBarItem({
 				label: 'stop',
@@ -219,5 +246,6 @@ const askForConfig = ({puffin, Dialog }) => {
 		dialog.launch()
 	})
 }
+
 
 module.exports = { entry }
