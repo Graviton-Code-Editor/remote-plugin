@@ -24,13 +24,11 @@ const executeServer = (API,room,password) => {
 	subprocess.on('exit', code => {
 		console.log(`child process exited with code ${code}`);
 	});
-	
-	console.log(subprocess)
-	
+		
 	const server = app.listen(Number(clientPort))
 	
 	emitter.on('message',data =>{
-		subprocess.send(data)
+		subprocess.send(JSON.stringify(data))
 	})
 	
 	emitter.on('close',()=>{
