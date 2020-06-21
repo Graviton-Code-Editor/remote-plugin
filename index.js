@@ -9,6 +9,8 @@ const executeServer = (API,room,password) => {
 	const { puffin } = API
 
 	const emitter = new puffin.state({})
+	
+	const username = Math.random()
 
 	const swarm = hyperswarm()
 	const topic = createHash('sha256')
@@ -30,15 +32,15 @@ const executeServer = (API,room,password) => {
 		})
 		socket.on("data", data => {
 			if( data && typeof data == "object" ){
-				const msg = Buffer.from(data).toString()
+				let msg = Buffer.from(data).toString()
 				let err = false
 				try{
-					const { type, content} = JSON.parse(msg)
+					const { type, content} = JSON.parse(decrypt(msg,password))
 				}catch(error){
 					err = error
 				}
 				if( !err ){
-					const { type, content} = JSON.parse(msg)
+					const { type, content} = JSON.parse(decrypt(msg,password))
 					emitter.emit(type,content)
 				}else{
 					console.log(msg,err)
@@ -46,60 +48,69 @@ const executeServer = (API,room,password) => {
 			}
 		})
 		emitter.on('message',data =>{
+			const computedData = {
+				...data,
+				username
+			}
 			const msg = JSON.stringify(data)
-			socket.write(msg)
+			socket.write(encrypt(msg,password))
 		})
 	})
 	return emitter
 }
 
 function entry(API){
-	const { StatusBarItem, RunningConfig, Explorer, SidePanel, puffin, Tab } = API
+	const { StatusBarItem, RunningConfig, Explorer, SidePanel, puffin, Tab, ContextMenu } = API
 	new StatusBarItem({
 		label: 'Remote',
-		action: async function(){
-			const { room, password } = await askForConfig(API) 
-			const emitter = executeServer(API,room,password)
-			emitter.on('userFound', async ({ type}) => {
-				console.log(`User found in room: '${room}'`)
-			})
-			emitter.on('info', (a) => {
-				console.log(a)
-			})
-			emitter.on('userLeft', async ({ type}) => {
-				console.log('A user left the room!')
-			})
-			emitter.on('listFolder', async (folderPath) => {
-				fs.readdir(folderPath,(err, list)=>{
-					const computedItems = list.map( item => {
-						const directory = join(folderPath,item)
-						return {
-							name: item,
-							isFolder: fs.lstatSync(directory).isDirectory()
+		action(e){
+			new ContextMenu({
+				parent:e.target,
+				list:[
+					{
+						label: 'Join',
+						action: async function(){
+							const { room, password } = await askForConfig(API) 
+							const emitter = executeServer(API,room,password)
+							emitter.on('userFound', async ({ type}) => {
+								console.log(`User found in room: '${room}'`)
+							})
+							emitter.on('info', (a) => {
+								console.log(a)
+							})
+							emitter.on('userLeft', async ({ type}) => {
+								console.log('A user left the room!')
+							})
+							emitter.on('listFolder', async (folderPath) => {
+								fs.readdir(folderPath,(err, list)=>{
+									const computedItems = list.map( item => {
+										const directory = join(folderPath,item)
+										return {
+											name: item,
+											isFolder: fs.lstatSync(directory).isDirectory()
+										}
+									})
+									emitter.emit('message',{
+										type: 'returnListFolder',
+										content:{
+											folderPath,
+											folderItems: computedItems
+										}
+									})
+								})
+							})
+							RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
+								emitter.emit('message',{
+									type: 'openedFolder',
+									content: folderPath
+								})
+							})
+							createSidePanel(emitter,API)
 						}
-					})
-					emitter.emit('message',{
-						type: 'returnListFolder',
-						content:{
-							folderPath,
-							folderItems: computedItems
-						}
-					})
-				})
+					}
+				],
+				event:e
 			})
-			RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
-				emitter.emit('message',{
-					type: 'openedFolder',
-					content: folderPath
-				})
-			})
-			new StatusBarItem({
-				label: 'stop',
-				action(){
-					emitter.emit('close')
-				}
-			})
-			createSidePanel(emitter,API)
 		}
 	})
 }
