@@ -82,8 +82,8 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 			})
 		}else{
 			Object.keys(emitter.data.users).map( userid => {
-				const { socket } = emitter.data.users[userid]
-				send(socket, msg, password)
+				const { socket, username:user } = emitter.data.users[userid]
+				if( user !== username ) send(socket, msg, password)
 			})
 		}
 	})
@@ -95,15 +95,17 @@ function handleData(socket, emitter,password){
 	socket.on('data', data => {
 		if( data && typeof data == "object" ){
 			console.log(Buffer.from(data))
-			let msg = Buffer.from(data).toString()
+			let msg = Buffer.from(data).toString().split("__")[0]
+			console.log(Buffer.from(data).toString())
 			let error = false
 			try{
-				
+				JSON.parse(msg)
 			}catch(err){
 				error = err
+				console.log(err)
 			}
 			if( !error ){
-				const { i, t ,d, id } = JSON.parse(decrypt(msg, password))
+				const { i, t ,d, id } = JSON.parse(msg)
 				if(!getPacket(packets,id)){
 					packets.push({
 						id,
@@ -113,10 +115,11 @@ function handleData(socket, emitter,password){
 				}
 				if(i < t){
 					const packet = getPacket(packets,id)
-					packet.parts[i] = d
+					packet.parts[i] = decrypt(d, password)
 					console.log("RECEIVED PACKET",`${i}/${t-1}`)
 				}
-				if(i === t-1){
+				console.log(getPacket(packets,id).parts)
+				if(Object.keys(getPacket(packets,id).parts).length === t){
 					let packet = getPacket(packets,id)
 					console.log(packet,i,t)
 					let computedData = ""
@@ -142,22 +145,26 @@ const removePacket = (packets,idd) => {
 
 const getPacket = (packets,idd) => {
 	return packets.find(({id}) => {
-		return id === id
+		return id === idd
 	})
 }
 
 const send = (socket, data, password) => {
-	const splitedData = data.match(/.{1,200}/g)
-	const id = shortid.generate()
+	console.log(data)
+	const splitedData = data.match(/.{1,1200}/g)
+	const id = createHash('sha256')
+		.update(splitedData[0])
+		.digest().toString()
+	console.log(splitedData)
 	splitedData.map( (d,i,t) => {
 		const packet = {
 			i,
 			t:t.length,
-			d,
+			d:encrypt(d,password),
 			id
 		}
 		console.log(Buffer.from(JSON.stringify(packet)))
-		socket.write(encrypt(JSON.stringify(packet),password))
+		socket.write(`${JSON.stringify(packet)}__`)
 	})
 }
 
