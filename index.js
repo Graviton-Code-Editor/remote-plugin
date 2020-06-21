@@ -35,6 +35,7 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 	let allSockets = []
 	
 	swarm.on('connection', (socket, details) => {
+		handleData(socket,emitter,password)
 		allSockets.push(socket)
 		emitter.emit('userFound')
 		socket.on("error", err =>{
@@ -44,22 +45,8 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 				emitter.emit('userLeft',err)
 			}
 		})
-		socket.on("data", data => {
-			if( data && typeof data == "object" ){
-				let msg = Buffer.from(data).toString()
-				let err = false
-				try{
-					const { type, content} = JSON.parse(decrypt(msg, password))
-				}catch(error){
-					err = error
-				}
-				if( !err ){
-					const { type, content} = JSON.parse(decrypt(msg, password))
-					emitter.emit(type,content)
-				}else{
-					console.log(msg,err)
-				}
-			}
+		emitter.on("data", ({ type, content}) => {
+			emitter.emit(type,content)
 		})
 		emitter.emit('message',{
 			type: 'identifyUser',
@@ -91,16 +78,57 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 		const msg = JSON.stringify(data)
 		if(data.type == 'identifyUser'){
 			allSockets.map( socket => {
-				socket.write(encrypt(msg, password))
+				send(socket,msg, password)
 			})
 		}else{
 			Object.keys(emitter.data.users).map( userid => {
 				const { socket } = emitter.data.users[userid]
-				socket.write(encrypt(msg, password))
+				send(socket, msg, password)
 			})
 		}
 	})
 	return emitter
+}
+
+function handleData(socket, emitter,password){
+	let previousPacketContent = ""
+	socket.on('data', data => {
+		if( data && typeof data == "object" ){
+			console.log(Buffer.from(data))
+			let msg = Buffer.from(data).toString()
+			console.log(msg)
+			let error = false
+			try{
+				
+			}catch(err){
+				error = err
+			}
+			if( !error ){
+				const { i, t ,d } = JSON.parse(decrypt(msg, password))
+				if(i < t){
+					previousPacketContent += d
+				}
+				if(i === t-1){
+					console.log(previousPacketContent)
+					emitter.emit('data',JSON.parse(previousPacketContent))
+					previousPacketContent = ""
+				}
+			}
+		}
+	})
+}
+
+const send = (socket, data, password) => {
+	const splitedData = data.match(/.{1,500}/g)
+	splitedData.map( (d,i,t) => {
+		const packet = {
+			i,
+			t:t.length,
+			d
+		}
+		console.log(packet)
+		socket.write(encrypt(JSON.stringify(packet),password))
+	})
 }
 
 function entry(API){
