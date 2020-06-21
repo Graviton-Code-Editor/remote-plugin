@@ -21,11 +21,6 @@ const executeServer = (API,room,password) => {
 	})
 	
 	swarm.on('connection', (socket, details) => {
-		console.log(details,socket)
-		const isMe = details.client
-		if(isMe){
-			console.log("I JUST JOINED")
-		}
 		socket.on("error", err =>{
 			console.log(err)
 			if( err ){
@@ -34,7 +29,7 @@ const executeServer = (API,room,password) => {
 			}
 		})
 		socket.on("data", data => {
-			if( data && typeof data == "object" && isMe){
+			if( data && typeof data == "object" ){
 				const msg = Buffer.from(data).toString()
 				let err = false
 				try{
