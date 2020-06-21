@@ -3,7 +3,7 @@
 	"id": "remote-plugin",
 	"description": "Remote Live Coding",
 	"author": "Marc Espín Sanz",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"main": "index.js",
 	"dependencies": {
 		"hyperswarm": "^2.14.0",

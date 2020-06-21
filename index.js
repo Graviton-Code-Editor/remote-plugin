@@ -22,6 +22,10 @@ const executeServer = (API,room,password) => {
 	
 	swarm.on('connection', (socket, details) => {
 		console.log(details,socket)
+		const isMe = details.client
+		if(isMe){
+			console.log("I JUST JOINED")
+		}
 		socket.on("error", err =>{
 			console.log(err)
 			if( err ){
@@ -29,8 +33,8 @@ const executeServer = (API,room,password) => {
 				emitter.emit('userLeft',err)
 			}
 		})
-		socket.on("data", data =>{
-			if( data && typeof data == "object"){
+		socket.on("data", data => {
+			if( data && typeof data == "object" && isMe){
 				const msg = Buffer.from(data).toString()
 				let err = false
 				try{
@@ -42,7 +46,7 @@ const executeServer = (API,room,password) => {
 					const { type, content} = JSON.parse(msg)
 					emitter.emit(type,content)
 				}else{
-					console.log(err)
+					console.log(msg,err)
 				}
 			}
 		})
@@ -150,33 +154,43 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 			content: folderPath
 		})
 		emitter.on('returnListFolder',({ folderPath, folderItems })=>{
-			resolve(folderItems.map( ({ name, isFolder}) => {
-				let itemOpened = false
-				const itemData = {
-					label: name,
-					action: async function(e,{ setItems }){
-						if( isFolder ){
-							if( !itemOpened) {
-								const directory = join(folderPath,name)
-								const items = await getItemsInFolder(emitter,directory,API)
-								setItems(items)
-							}
-						}else{
-							
-							
-						}
-						itemOpened = !itemOpened
-					}
-				}
+			let itemsList = []
+			itemsList = folderItems.map( ({ name, isFolder}) => {
 				if(isFolder){
-					itemData.items = []
+					let itemOpened = false
+					const itemData = {
+						label: name,
+						action: async function(e,{ setItems }){
+							if( isFolder ){
+								if( !itemOpened) {
+									const directory = join(folderPath,name)
+									const items = await getItemsInFolder(emitter,directory,API)
+									setItems(items)
+								}
+							}
+							itemOpened = !itemOpened
+						},
+						items:[]
+					}
+					return itemData
 				}
-				return itemData
-			}))
+			}).filter(Boolean)
+			folderItems.map( ({ name, isFolder }) => {
+				if(!isFolder) {
+					const itemData = {
+						label: name,
+						action: async function(e){
+							if( !isFolder ){
+							}
+						}
+					}
+					itemsList.push(itemData)
+				}
+			})
+			resolve(itemsList)
 		})
 	})
 }
-
 
 const askForConfig = ({puffin, Dialog }) => {
 	return new Promise((resolve,reject)=>{
