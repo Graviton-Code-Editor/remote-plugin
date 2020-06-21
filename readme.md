@@ -19,11 +19,6 @@ Install dependencies:
 npm install
 ```
 
-Run locally:
-```shell
-npm run watch
-```
-
 Build (optional):
 ```shell
 npm run build
