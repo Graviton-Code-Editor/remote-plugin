@@ -91,12 +91,11 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 }
 
 function handleData(socket, emitter,password){
-	let previousPacketContent = ""
+	let packets = []
 	socket.on('data', data => {
 		if( data && typeof data == "object" ){
 			console.log(Buffer.from(data))
 			let msg = Buffer.from(data).toString()
-			console.log(msg)
 			let error = false
 			try{
 				
@@ -104,29 +103,60 @@ function handleData(socket, emitter,password){
 				error = err
 			}
 			if( !error ){
-				const { i, t ,d } = JSON.parse(decrypt(msg, password))
+				const { i, t ,d, id } = JSON.parse(decrypt(msg, password))
+				if(!getPacket(packets,id)){
+					packets.push({
+						id,
+						t,
+						parts: {}
+					})
+				}
 				if(i < t){
-					previousPacketContent += d
+					const packet = getPacket(packets,id)
+					packet.parts[i] = d
+					console.log("RECEIVED PACKET",`${i}/${t-1}`)
 				}
 				if(i === t-1){
-					console.log(previousPacketContent)
-					emitter.emit('data',JSON.parse(previousPacketContent))
-					previousPacketContent = ""
+					let packet = getPacket(packets,id)
+					console.log(packet,i,t)
+					let computedData = ""
+					for(let c = 0;c<t;c++){
+						computedData += packet.parts[c]
+					}
+					console.log(computedData)
+					emitter.emit('data',JSON.parse(computedData))
+					removePacket(packets,id)
 				}
 			}
 		}
 	})
 }
 
+const removePacket = (packets,idd) => {
+	let where 
+	packets.find(({id},i) => {
+		if(id === id) where = i
+	})
+	packets.splice(where,1)
+}
+
+const getPacket = (packets,idd) => {
+	return packets.find(({id}) => {
+		return id === id
+	})
+}
+
 const send = (socket, data, password) => {
-	const splitedData = data.match(/.{1,500}/g)
+	const splitedData = data.match(/.{1,200}/g)
+	const id = shortid.generate()
 	splitedData.map( (d,i,t) => {
 		const packet = {
 			i,
 			t:t.length,
-			d
+			d,
+			id
 		}
-		console.log(packet)
+		console.log(Buffer.from(JSON.stringify(packet)))
 		socket.write(encrypt(JSON.stringify(packet),password))
 	})
 }
