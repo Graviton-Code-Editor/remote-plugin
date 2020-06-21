@@ -4,25 +4,39 @@ const { join, basename, dirname } = require("path")
 const hyperswarm = require('hyperswarm')
 const { createHash, randomBytes } = require('crypto')
 const { encrypt, decrypt } = require("strong-cryptor")
+const shortid = require("shortid")
+console.log(decrypt)
 
-const executeServer = (API,room,password) => {
+const joinRoom = (API,room,password, username = Math.random()) => {
 	const { puffin } = API
-
-	const emitter = new puffin.state({})
+		
+	let userid = shortid.generate()
 	
-	const username = Math.random()
-
+	const emitter = new puffin.state({
+		me:{
+			username,
+			userid
+		},
+		users: {
+		
+		}
+	})
+	
 	const swarm = hyperswarm()
 	const topic = createHash('sha256')
 		.update(room)
 		.digest()
-
+	
 	swarm.join(topic, {
 		lookup: true, 
 		announce: true 
 	})
 	
+	let allSockets = []
+	
 	swarm.on('connection', (socket, details) => {
+		allSockets.push(socket)
+		emitter.emit('userFound')
 		socket.on("error", err =>{
 			console.log(err)
 			if( err ){
@@ -35,83 +49,118 @@ const executeServer = (API,room,password) => {
 				let msg = Buffer.from(data).toString()
 				let err = false
 				try{
-					const { type, content} = JSON.parse(decrypt(msg,password))
+					const { type, content} = JSON.parse(decrypt(msg, password))
 				}catch(error){
 					err = error
 				}
 				if( !err ){
-					const { type, content} = JSON.parse(decrypt(msg,password))
+					const { type, content} = JSON.parse(decrypt(msg, password))
 					emitter.emit(type,content)
 				}else{
 					console.log(msg,err)
 				}
 			}
 		})
-		emitter.on('message',data =>{
-			const computedData = {
-				...data,
-				username
+		emitter.emit('message',{
+			type: 'identifyUser',
+			content:{
+				username,
+				userid
 			}
-			const msg = JSON.stringify(data)
-			socket.write(encrypt(msg,password))
 		})
+		emitter.on('identifyUser',({ username, userird }) => {
+			const usernameExists = emitter.data.users[userird] !== undefined
+			emitter.data.users[userird] = {
+				username,
+				socket
+			}
+			if(!usernameExists){
+				emitter.emit('userIdentified',{
+					username,
+					userird
+				})
+			}
+		})
+	})
+	emitter.on('message',data =>{
+		const computedData = {
+			...data,
+			username,
+			userid
+		}
+		const msg = JSON.stringify(data)
+		if(data.type == 'identifyUser'){
+			allSockets.map( socket => {
+				socket.write(encrypt(msg, password))
+			})
+		}else{
+			Object.keys(emitter.data.users).map( userid => {
+				const { socket } = emitter.data.users[userid]
+				socket.write(encrypt(msg, password))
+			})
+		}
 	})
 	return emitter
 }
 
 function entry(API){
-	const { StatusBarItem, RunningConfig, Explorer, SidePanel, puffin, Tab, ContextMenu } = API
+	const { StatusBarItem, ContextMenu } = API
 	new StatusBarItem({
 		label: 'Remote',
 		action(e){
 			new ContextMenu({
-				parent:e.target,
+				parent: e.target,
 				list:[
 					{
 						label: 'Join',
 						action: async function(){
-							const { room, password } = await askForConfig(API) 
-							const emitter = executeServer(API,room,password)
-							emitter.on('userFound', async ({ type}) => {
-								console.log(`User found in room: '${room}'`)
-							})
-							emitter.on('info', (a) => {
-								console.log(a)
-							})
-							emitter.on('userLeft', async ({ type}) => {
-								console.log('A user left the room!')
-							})
-							emitter.on('listFolder', async (folderPath) => {
-								fs.readdir(folderPath,(err, list)=>{
-									const computedItems = list.map( item => {
-										const directory = join(folderPath,item)
-										return {
-											name: item,
-											isFolder: fs.lstatSync(directory).isDirectory()
-										}
-									})
-									emitter.emit('message',{
-										type: 'returnListFolder',
-										content:{
-											folderPath,
-											folderItems: computedItems
-										}
-									})
-								})
-							})
-							RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
-								emitter.emit('message',{
-									type: 'openedFolder',
-									content: folderPath
-								})
-							})
+							const { room, password, username } = await askForConfig(API) 
+							const emitter = joinRoom(API, room, password, username)
+							handleEvents(emitter,API)
 							createSidePanel(emitter,API)
 						}
 					}
 				],
-				event:e
+				event: e
 			})
 		}
+	})
+}
+
+function handleEvents(emitter,API){
+	const { RunningConfig } = API
+	emitter.on('userFound', async () => {
+		console.log(`User found in room:`)
+	})
+	emitter.on('info', data => {
+		console.log(data)
+	})
+	emitter.on('userLeft', async () => {
+		console.log('A user left the room!')
+	})
+	emitter.on('listFolder', async (folderPath) => {
+		fs.readdir(folderPath,(err, list)=>{
+			const computedItems = list.map( item => {
+				const directory = join(folderPath,item)
+				return {
+					name: item,
+					isFolder: fs.lstatSync(directory).isDirectory()
+				}
+			})
+			emitter.emit('message',{
+				type: 'returnListFolder',
+				content:{
+					folderPath,
+					folderItems: computedItems
+				}
+			})
+		})
+	})
+	RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
+		emitter.emit('message',{
+			type: 'openedFolder',
+			content: folderPath
+		})
 	})
 }
 
@@ -125,6 +174,10 @@ const createSidePanel = (emitter,API) => {
 		},
 		panel(){
 			function mounted(){
+				emitter.on('userIdentified', async ({ username }) => {
+					const user = puffin.element`<li>${username}</li>`
+					puffin.render(user,this.querySelector("#users"))
+				})
 				emitter.on('openedFolder', async (folderPath) => {
 					let itemOpened = false
 					const remoteExplorer = new Explorer({
@@ -142,11 +195,16 @@ const createSidePanel = (emitter,API) => {
 							}
 						]
 					})
-					puffin.render(remoteExplorer,this)
+					puffin.render(remoteExplorer,this.querySelector("#projects"))
 				})
 			}
 			return puffin.element`
-				<div mounted="${mounted}"/>
+				<div mounted="${mounted}">
+					<div id="users">
+						<li>${emitter.data.me.username}(you)</li>
+					</div>
+					<div id="projects"/>
+				</div>
 			`
 		}
 	})
@@ -198,14 +256,15 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 	})
 }
 
-const askForConfig = ({puffin, Dialog }) => {
-	return new Promise((resolve,reject)=>{
+const askForConfig = ({ puffin, Dialog }) => {
+	return new Promise((resolve, reject)=>{
 		const dialog = new Dialog({
 			title: 'Config',
 			component(){
 				return puffin.element`
 					<div>
-						<input placeHolder="room" id="room"/>
+						<input placeHolder="public" id="room"/>
+						<input placeHolder="Marc" id="username"/>
 						<input type="password" id="password"/>
 					</div>
 				`
@@ -215,9 +274,11 @@ const askForConfig = ({puffin, Dialog }) => {
 					label: 'Connect',
 					action(){
 						const room = document.getElementById('room').value || 'public'
+						const username = document.getElementById('username').value 
 						const password = document.getElementById('password').value.repeat(32).substring(0,32)
 						resolve({
 							room,
+							username,
 							password
 						})
 					}

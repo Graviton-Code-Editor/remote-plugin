@@ -5,11 +5,12 @@
 	"author": "Marc Espín Sanz",
 	"version": "0.1.2",
 	"main": "index.js",
-	"scripts":{
-		"build":"gvsdk --entry package.json --target plugin --mode release"
+	"scripts": {
+		"build": "gvsdk --entry package.json --target plugin --mode release"
 	},
 	"dependencies": {
 		"hyperswarm": "^2.14.0",
+		"shortid": "^2.2.15",
 		"strong-cryptor": "^2.2.0"
 	},
 	"devDependencies": {
