@@ -5,7 +5,10 @@ const hyperswarm = require('hyperswarm')
 const { createHash, randomBytes } = require('crypto')
 const { encrypt, decrypt } = require("strong-cryptor")
 const shortid = require("shortid")
-console.log(decrypt)
+
+console.log(this.puffin)
+
+let globalEmitter
 
 const joinRoom = (API,room,password, username = Math.random()) => {
 	const { puffin } = API
@@ -18,7 +21,7 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 			userid
 		},
 		users: {
-		
+			
 		}
 	})
 	
@@ -87,6 +90,25 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 			})
 		}
 	})
+	emitter.on('disconnect',() => {
+		const data = {
+			type: 'userDisconnected',
+			content:{
+				username,
+				userid
+			},
+			username,
+			userid
+		}
+		const msg = JSON.stringify(data)
+		Object.keys(emitter.data.users).map( userid => {
+			const { socket, username: user } = emitter.data.users[userid]
+			if( user !== username ) send(socket, msg, password)
+			emitter.emit('userDisconnected',{ username: user, userid })
+			delete emitter.data.users[userid]
+		})
+		
+	})
 	return emitter
 }
 
@@ -94,9 +116,7 @@ function handleData(socket, emitter,password){
 	let packets = []
 	socket.on('data', data => {
 		if( data && typeof data == "object" ){
-			console.log(Buffer.from(data))
 			let msg = Buffer.from(data).toString().split("__")[0]
-			console.log(Buffer.from(data).toString())
 			let error = false
 			try{
 				JSON.parse(msg)
@@ -116,17 +136,15 @@ function handleData(socket, emitter,password){
 				if(i < t){
 					const packet = getPacket(packets,id)
 					packet.parts[i] = decrypt(d, password)
-					console.log("RECEIVED PACKET",`${i}/${t-1}`)
+					console.log(` ${i+1}/${t} <--`,[packet.parts[i]])
 				}
-				console.log(getPacket(packets,id).parts)
 				if(Object.keys(getPacket(packets,id).parts).length === t){
 					let packet = getPacket(packets,id)
-					console.log(packet,i,t)
 					let computedData = ""
 					for(let c = 0;c<t;c++){
 						computedData += packet.parts[c]
 					}
-					console.log(computedData)
+					console.log(`RECEIVED: ${t}/${t} ##`,[computedData])
 					emitter.emit('data',JSON.parse(computedData))
 					removePacket(packets,id)
 				}
@@ -150,26 +168,25 @@ const getPacket = (packets,idd) => {
 }
 
 const send = (socket, data, password) => {
-	console.log(data)
-	const splitedData = data.match(/.{1,1200}/g)
+	const splitedData = data.match(/.{1,800}/g)
 	const id = createHash('sha256')
 		.update(splitedData[0])
 		.digest().toString()
-	console.log(splitedData)
 	splitedData.map( (d,i,t) => {
+		console.log(`${i+1}/${t.length} -->`,splitedData)
 		const packet = {
 			i,
 			t:t.length,
 			d:encrypt(d,password),
 			id
 		}
-		console.log(Buffer.from(JSON.stringify(packet)))
 		socket.write(`${JSON.stringify(packet)}__`)
 	})
+	console.log(`SENT: ${splitedData.length}/${splitedData.length} ##`,[splitedData])
 }
 
 function entry(API){
-	const { StatusBarItem, ContextMenu } = API
+	const { StatusBarItem, ContextMenu, Notification } = API
 	new StatusBarItem({
 		label: 'Remote',
 		action(e){
@@ -181,8 +198,19 @@ function entry(API){
 						action: async function(){
 							const { room, password, username } = await askForConfig(API) 
 							const emitter = joinRoom(API, room, password, username)
+							globalEmitter = emitter
 							handleEvents(emitter,API)
 							createSidePanel(emitter,API)
+							new Notification({
+								title: `Joined #${room} as ${username}`,
+								content: ''
+							})
+						}
+					},
+					{
+						label: 'Close',
+						action: async function(){
+							if(globalEmitter) globalEmitter.emit('disconnect')
 						}
 					}
 				],
@@ -194,14 +222,8 @@ function entry(API){
 
 function handleEvents(emitter,API){
 	const { RunningConfig } = API
-	emitter.on('userFound', async () => {
-		console.log(`User found in room:`)
-	})
 	emitter.on('info', data => {
 		console.log(data)
-	})
-	emitter.on('userLeft', async () => {
-		console.log('A user left the room!')
 	})
 	emitter.on('listFolder', async (folderPath) => {
 		fs.readdir(folderPath,(err, list)=>{
@@ -240,7 +262,14 @@ const createSidePanel = (emitter,API) => {
 		panel(){
 			function mounted(){
 				emitter.on('userIdentified', async ({ username }) => {
-					const user = puffin.element`<li>${username}</li>`
+					function userMounted(){
+						emitter.on('userDisconnected', ({ username: disconnectedUsername }) => {
+							if( username === disconnectedUsername ){
+								this.remove()
+							}
+						})
+					}
+					const user = puffin.element`<li mounted="${userMounted}">${username}</li>`
 					puffin.render(user,this.querySelector("#users"))
 				})
 				emitter.on('openedFolder', async (folderPath) => {
@@ -282,55 +311,90 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 			type: 'listFolder',
 			content: folderPath
 		})
-		emitter.on('returnListFolder',({ folderPath, folderItems })=>{
-			let itemsList = []
-			itemsList = folderItems.map( ({ name, isFolder}) => {
-				if(isFolder){
-					let itemOpened = false
-					const itemData = {
-						label: name,
-						action: async function(e,{ setItems }){
-							if( isFolder ){
-								if( !itemOpened) {
-									const directory = join(folderPath,name)
-									const items = await getItemsInFolder(emitter,directory,API)
-									setItems(items)
+		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
+			if( folderPath === returnedFolderPath ){
+				let itemsList = []
+				itemsList = folderItems.map( ({ name, isFolder}) => {
+					if(isFolder){
+						let itemOpened = false
+						const itemData = {
+							label: name,
+							action: async function(e,{ setItems }){
+								if( isFolder ){
+									if( !itemOpened) {
+										const directory = join(folderPath,name)
+										const items = await getItemsInFolder(emitter,directory,API)
+										setItems(items)
+									}
+								}
+								itemOpened = !itemOpened
+							},
+							items:[]
+						}
+						return itemData
+					}
+				}).filter(Boolean)
+				folderItems.map( ({ name, isFolder }) => {
+					if(!isFolder) {
+						const itemData = {
+							label: name,
+							action: async function(e){
+								if( !isFolder ){
 								}
 							}
-							itemOpened = !itemOpened
-						},
-						items:[]
-					}
-					return itemData
-				}
-			}).filter(Boolean)
-			folderItems.map( ({ name, isFolder }) => {
-				if(!isFolder) {
-					const itemData = {
-						label: name,
-						action: async function(e){
-							if( !isFolder ){
-							}
 						}
+						itemsList.push(itemData)
 					}
-					itemsList.push(itemData)
-				}
-			})
-			resolve(itemsList)
+				})
+				resolve(itemsList)
+			}
 		})
 	})
 }
 
-const askForConfig = ({ puffin, Dialog }) => {
+const askForConfig = ({ puffin, Dialog, drac }) => {
 	return new Promise((resolve, reject)=>{
 		const dialog = new Dialog({
-			title: 'Config',
+			title: 'Login',
+			height: '270px',
 			component(){
-				return puffin.element`
-					<div>
-						<input placeHolder="public" id="room"/>
-						<input placeHolder="Marc" id="username"/>
-						<input type="password" id="password"/>
+				const styleWrapper = puffin.style`
+					& {
+						display: flex;
+						flex-direction: column;
+					}
+					& > div {
+						display: flex;
+						flex: 1;
+					}
+					& > div label {
+						width: 120px;
+						height: 100%;
+						margin: auto 0;
+					}
+					& > div input {
+						flex: 1;
+						max-width: 60%;
+					}
+				`
+				return puffin.element({
+					components:{
+						Input: drac.Input
+					}
+				})`
+					<div class="${styleWrapper}">
+						<div>
+							<label>Room</label> 
+							<Input placeHolder="CodeParty" id="room"/>
+						</div>
+						<div>
+							<label>Username</label> 
+							<Input placeHolder="Superman" id="username"/>
+						</div>
+						<div>
+							<label>Password</label> 
+							<Input type="password" id="password"/>
+						</div>
 					</div>
 				`
 			},
