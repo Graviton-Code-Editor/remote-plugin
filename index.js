@@ -1,12 +1,10 @@
 
-const fs = require("fs")
-const { join, basename, dirname } = require("path")
+const fs = require('fs')
+const { join, basename, dirname, extname } = require("path")
 const hyperswarm = require('hyperswarm')
 const { createHash, randomBytes } = require('crypto')
-const { encrypt, decrypt } = require("strong-cryptor")
-const shortid = require("shortid")
-
-console.log(this.puffin)
+const { encrypt, decrypt } = require('strong-cryptor')
+const shortid = require('shortid')
 
 let globalEmitter
 
@@ -120,6 +118,8 @@ function handleData(socket, emitter,password){
 			let error = false
 			try{
 				JSON.parse(msg)
+				const { d } = JSON.parse(msg)
+				decrypt(d, password)
 			}catch(err){
 				error = err
 				console.log(err)
@@ -279,10 +279,14 @@ const createSidePanel = (emitter,API) => {
 							{
 								label: basename(folderPath),
 								items: [],
-								action: async function(e,{ setItems }){
+								icon:'folder.closed',
+								action: async function(e,{ setIcon, setItems }){
 									if( !itemOpened ){
 										const items = await getItemsInFolder(emitter,folderPath,API)
 										setItems(items)
+										setIcon('folder.opened')
+									}else{
+										setIcon('folder.closed')
 									}
 									itemOpened = !itemOpened
 								}
@@ -304,6 +308,8 @@ const createSidePanel = (emitter,API) => {
 	})
 }
 
+const getExtension = path => extname(path).split('.')[1]
+
 const getItemsInFolder = async (emitter,folderPath,API) => {
 	const { puffin, SidePanel, Explorer, RunningConfig } = API
 	return new Promise((resolve, reject) => {
@@ -319,12 +325,16 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 						let itemOpened = false
 						const itemData = {
 							label: name,
-							action: async function(e,{ setItems }){
+							icon: 'folder.closed',
+							action: async function(e,{ setIcon, setItems }){
 								if( isFolder ){
 									if( !itemOpened) {
 										const directory = join(folderPath,name)
 										const items = await getItemsInFolder(emitter,directory,API)
 										setItems(items)
+										setIcon('folder.opened')
+									}else{
+										setIcon('folder.closed')
 									}
 								}
 								itemOpened = !itemOpened
@@ -336,10 +346,13 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 				}).filter(Boolean)
 				folderItems.map( ({ name, isFolder }) => {
 					if(!isFolder) {
+						const directory = join(folderPath,name)
 						const itemData = {
 							label: name,
+							icon: `${getExtension(directory)}.lang`,
 							action: async function(e){
 								if( !isFolder ){
+									//
 								}
 							}
 						}
