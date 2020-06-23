@@ -10,31 +10,31 @@ let globalEmitter
 
 const joinRoom = (API,room,password, username = Math.random()) => {
 	const { puffin } = API
-		
+
 	let userid = shortid.generate()
-	
+
 	const emitter = new puffin.state({
 		me:{
 			username,
 			userid
 		},
 		users: {
-			
+
 		}
 	})
-	
+
 	const swarm = hyperswarm()
 	const topic = createHash('sha256')
-		.update(room)
-		.digest()
-	
+	.update(room)
+	.digest()
+
 	swarm.join(topic, {
 		lookup: true, 
 		announce: true 
 	})
-	
+
 	let allSockets = []
-	
+
 	swarm.on('connection', (socket, details) => {
 		handleData(socket,emitter,password)
 		allSockets.push(socket)
@@ -76,15 +76,15 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 			username,
 			userid
 		}
-		const msg = JSON.stringify(data)
+		const msg = JSON.stringify(computedData)
 		if(data.type == 'identifyUser'){
 			allSockets.map( socket => {
-				send(socket,msg, password)
+				send(emitter,socket,msg, password)
 			})
 		}else{
 			Object.keys(emitter.data.users).map( userid => {
 				const { socket, username:user } = emitter.data.users[userid]
-				if( user !== username ) send(socket, msg, password)
+				if( user !== username ) send(emitter,socket, msg, password)
 			})
 		}
 	})
@@ -105,21 +105,22 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 			emitter.emit('userDisconnected',{ username: user, userid })
 			delete emitter.data.users[userid]
 		})
-		
+
 	})
 	return emitter
 }
 
 function handleData(socket, emitter,password){
-	let packets = []
+	const packets = []
+	const closedPackets = []
 	socket.on('data', data => {
 		if( data && typeof data == "object" ){
 			let msg = Buffer.from(data).toString().split("__")[0]
 			let error = false
 			try{
-				JSON.parse(msg)
+				console.log(msg)
 				const { d } = JSON.parse(msg)
-				decrypt(d, password)
+				console.log(d)
 			}catch(err){
 				error = err
 				console.log(err)
@@ -135,28 +136,52 @@ function handleData(socket, emitter,password){
 				}
 				if(i < t){
 					const packet = getPacket(packets,id)
-					packet.parts[i] = decrypt(d, password)
+					if(packet.parts[i]) return
+					packet.parts[i] = d
 					console.log(` ${i+1}/${t} <--`,[packet.parts[i]])
 				}
 				if(Object.keys(getPacket(packets,id).parts).length === t){
+					if(closedPackets.includes(id)) return
 					let packet = getPacket(packets,id)
 					let computedData = ""
 					for(let c = 0;c<t;c++){
 						computedData += packet.parts[c]
 					}
-					console.log(`RECEIVED: ${t}/${t} ##`,[computedData])
-					emitter.emit('data',JSON.parse(computedData))
-					removePacket(packets,id)
+					emitter.emit('data',JSON.parse(decrypt(computedData, password)))
+					removePacket(packets,closedPackets,id)
+				}else{
+					setTimeout(()=>{
+						const packet = getPacket(packets,id)
+						if(packet && !closedPackets.includes(id)){
+							const packetsNotFound = []
+							for(let c = 0;c<t;c++){
+								if(!packet.parts[c]){
+									packetsNotFound.push(c)
+								}
+							}
+							emitter.emit('message',{
+								type: 'requestPacket',
+								content: {
+									id,
+									numbers: packetsNotFound,
+									t
+								}
+							})
+						}
+					},750)
 				}
 			}
 		}
 	})
 }
 
-const removePacket = (packets,idd) => {
+const removePacket = (packets,closedPackets,idd) => {
 	let where 
 	packets.find(({id},i) => {
-		if(id === id) where = i
+		if(id === id) {
+			closedPackets.push(id)
+			where = i
+		}
 	})
 	packets.splice(where,1)
 }
@@ -167,22 +192,29 @@ const getPacket = (packets,idd) => {
 	})
 }
 
-const send = (socket, data, password) => {
-	const splitedData = data.match(/.{1,800}/g)
+const send = (emitter, socket, data, password) => {
+	const splitedData = encrypt(data,password).match(/.{1,1100}/g)
 	const id = createHash('sha256')
 		.update(splitedData[0])
 		.digest().toString()
-	splitedData.map( (d,i,t) => {
-		console.log(`${i+1}/${t.length} -->`,splitedData)
+	emitter.on('requestPacket',({ id:idd, numbers,t }) => {
+		numbers.forEach(n => {
+			console.log(n,splitedData[n])
+			sendPacket(splitedData[n],n,Array(t))
+		})
+	})
+	const sendPacket = (d,i,t) => {
+		console.log(`${i+1}/${t.length} -->`,[d])
 		const packet = {
 			i,
 			t:t.length,
-			d:encrypt(d,password),
+			d,
 			id
 		}
 		socket.write(`${JSON.stringify(packet)}__`)
-	})
-	console.log(`SENT: ${splitedData.length}/${splitedData.length} ##`,[splitedData])
+	}
+	splitedData.map(sendPacket)
+	console.log(`SENT: ${splitedData.length}/${splitedData.length} ##`,[data])
 }
 
 function entry(API){
@@ -241,6 +273,19 @@ function handleEvents(emitter,API){
 					folderItems: computedItems
 				}
 			})
+		})
+	})
+	emitter.on('getFileContent', async ({ filePath }) => {
+		fs.readFile(filePath,'UTF-8', (err, fileContent) => {
+			if(!err){
+				emitter.emit('message',{
+					type: 'returnGetFileContent',
+					content:{
+						filePath,
+						fileContent
+					}
+				})
+			}
 		})
 	})
 	RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
@@ -329,7 +374,7 @@ const createSidePanel = (emitter,API) => {
 const getExtension = path => extname(path).split('.')[1]
 
 const getItemsInFolder = async (emitter,folderPath,API) => {
-	const { puffin, SidePanel, Explorer, RunningConfig } = API
+	const { puffin, SidePanel, Explorer, RunningConfig, Editor, Tab } = API
 	return new Promise((resolve, reject) => {
 		emitter.emit('message',{
 			type: 'listFolder',
@@ -338,7 +383,7 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
 				let itemsList = []
-				itemsList = folderItems.map( ({ name, isFolder}) => {
+				itemsList = folderItems.map(({ name, isFolder}) => {
 					if(isFolder){
 						let itemOpened = false
 						const itemData = {
@@ -362,7 +407,7 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 						return itemData
 					}
 				}).filter(Boolean)
-				folderItems.map( ({ name, isFolder }) => {
+				folderItems.map(({ name, isFolder }) => {
 					if(!isFolder) {
 						const directory = join(folderPath,name)
 						const itemData = {
@@ -370,7 +415,23 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 							icon: `${getExtension(directory)}.lang`,
 							action: async function(e){
 								if( !isFolder ){
-									//
+									const { bodyElement, tabElement, tabState, isCancelled } = new Tab({
+										isEditor: true,
+										title: basename(directory),
+										directory,
+										parentFolder: folderPath
+									})
+									if (!isCancelled) {
+										new Editor({
+											language: getExtension(directory),
+											value: await getFileContent(emitter,directory),
+											theme: 'Arctic',
+											bodyElement,
+											tabElement,
+											tabState,
+											directory
+										})
+									}
 								}
 							}
 						}
@@ -378,6 +439,22 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 					}
 				})
 				resolve(itemsList)
+			}
+		})
+	})
+}
+
+const getFileContent = (emitter, filePath ) => {
+	return new Promise((resolve, reject ) => {
+		emitter.emit('message',{
+			type: 'getFileContent',
+			content:{
+				filePath
+			}
+		})
+		emitter.on('returnGetFileContent',({ filePath: returnFilePath, fileContent }) => {
+			if( filePath === returnFilePath ){
+				resolve(fileContent)
 			}
 		})
 	})
@@ -413,20 +490,20 @@ const askForConfig = ({ puffin, Dialog, drac }) => {
 						Input: drac.Input
 					}
 				})`
-					<div class="${styleWrapper}">
-						<div>
-							<label>Room</label> 
-							<Input placeHolder="CodeParty" id="room"/>
-						</div>
-						<div>
-							<label>Username</label> 
-							<Input placeHolder="Superman" id="username"/>
-						</div>
-						<div>
-							<label>Password</label> 
-							<Input type="password" id="password"/>
-						</div>
+				<div class="${styleWrapper}">
+					<div>
+						<label>Room</label> 
+						<Input placeHolder="CodeParty" id="room"/>
 					</div>
+					<div>
+						<label>Username</label> 
+						<Input placeHolder="Superman" id="username"/>
+					</div>
+					<div>
+						<label>Password</label> 
+						<Input type="password" id="password"/>
+					</div>
+				</div>
 				`
 			},
 			buttons:[
