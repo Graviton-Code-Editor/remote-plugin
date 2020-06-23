@@ -269,7 +269,14 @@ const createSidePanel = (emitter,API) => {
 							}
 						})
 					}
-					const user = puffin.element`<li mounted="${userMounted}">${username}</li>`
+					const user = new Explorer({
+						items:[
+							{
+								label:  username,
+								mounted: userMounted
+							}
+						]
+					})
 					puffin.render(user,this.querySelector("#users"))
 				})
 				emitter.on('openedFolder', async (folderPath) => {
@@ -296,10 +303,21 @@ const createSidePanel = (emitter,API) => {
 					puffin.render(remoteExplorer,this.querySelector("#projects"))
 				})
 			}
+			const youUser = new Explorer({
+				items:[
+					{
+						label:  emitter.data.me.username,
+						decorator:{
+							label: 'You',
+							background: 'var(--buttonBackground)'
+						}
+					}
+				]
+			})
 			return puffin.element`
 				<div mounted="${mounted}">
 					<div id="users">
-						<li>${emitter.data.me.username}(you)</li>
+						${youUser}
 					</div>
 					<div id="projects"/>
 				</div>
