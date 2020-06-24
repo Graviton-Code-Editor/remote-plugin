@@ -296,6 +296,25 @@ function handleEvents(emitter,API){
 			content: ''
 		})
 	})
+	RunningConfig.on('aTabHasBeenFocused', ({ directory, client, instance }) => {
+		let previousBookmark
+		emitter.on('cursorSetIn', async ({ filePath, line, ch }) => {
+			console.log(directory.replace(/\\\\/gm,"\\"),filePath)
+			if( directory.replace(/\\\\/gm,"\\") === filePath ){
+				if(previousBookmark) previousBookmark.clear()
+				const peerCursor = document.createElement('span');
+				peerCursor.style.borderLeftStyle = 'solid';
+				peerCursor.style.borderLeftWidth = '1px';
+				peerCursor.style.borderLeftColor = 'blue';
+				previousBookmark = client.do('setBookmark',{
+					instance,
+					line: line -1,
+					ch: ch -1,
+					element: peerCursor
+				})
+			}
+		})
+	})
 }
 
 const createSidePanel = (emitter,API) => {
@@ -417,23 +436,7 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 							icon: `${getExtension(directory)}.lang`,
 							action: async function(e){
 								if( !isFolder ){
-									const { bodyElement, tabElement, tabState, isCancelled } = new Tab({
-										isEditor: true,
-										title: basename(directory),
-										directory,
-										parentFolder: folderPath
-									})
-									if (!isCancelled) {
-										new Editor({
-											language: getExtension(directory),
-											value: await getFileContent(emitter,directory),
-											theme: 'Arctic',
-											bodyElement,
-											tabElement,
-											tabState,
-											directory
-										})
-									}
+									createTabEditor(directory, folderPath, emitter, API)
 								}
 							}
 						}
@@ -445,6 +448,46 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 		})
 	})
 }
+
+const createTabEditor = async (directory, folderPath, emitter, API) => {
+	const { Editor, Tab } = API
+	const { bodyElement, tabElement, tabState, isCancelled } = new Tab({
+		isEditor: true,
+		title: basename(directory),
+		directory,
+		parentFolder: folderPath
+	})
+	if (!isCancelled) {
+		createTabEditor(directory, emitter, API)
+		const { client, instance } = new Editor({
+			language: getExtension(directory),
+			value: await getFileContent(emitter,directory),
+			theme: 'Night',
+			bodyElement,
+			tabElement,
+			tabState,
+			directory
+		})
+		const handleCursor = () => {
+			const { line, ch } = client.do('getCursorPosition',{
+				instance
+			})
+			console.log(line,ch)
+			emitter.emit('message',{
+				type: 'cursorSetIn',
+				content:{
+					filePath: directory,
+					line,
+					ch
+				}
+			})
+		}
+		client.do('onChanged',{ instance, action: handleCursor})
+		client.do('onActive',{ instance, action: handleCursor})
+	}
+
+}
+
 
 const getFileContent = (emitter, filePath ) => {
 	return new Promise((resolve, reject ) => {
