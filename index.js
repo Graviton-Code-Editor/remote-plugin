@@ -6,35 +6,29 @@ const { createHash, randomBytes } = require('crypto')
 const { encrypt, decrypt } = require('strong-cryptor')
 const shortid = require('shortid')
 
+const PACKET_DELAY_REQUEST = 1000
 let globalEmitter
 
 const joinRoom = (API,room,password, username = Math.random()) => {
 	const { puffin } = API
-
-	let userid = shortid.generate()
-
+	const userid = shortid.generate()
+	const allSockets = []
 	const emitter = new puffin.state({
+		room,
 		me:{
 			username,
 			userid
 		},
-		users: {
-
-		}
+		users: {}
 	})
-
 	const swarm = hyperswarm()
 	const topic = createHash('sha256')
 	.update(room)
 	.digest()
-
 	swarm.join(topic, {
 		lookup: true, 
 		announce: true 
 	})
-
-	let allSockets = []
-
 	swarm.on('connection', (socket, details) => {
 		handleData(socket,emitter,password)
 		allSockets.push(socket)
@@ -120,7 +114,6 @@ function handleData(socket, emitter,password){
 			try{
 				console.log(msg)
 				const { d } = JSON.parse(msg)
-				console.log(d)
 			}catch(err){
 				error = err
 				console.log(err)
@@ -147,6 +140,7 @@ function handleData(socket, emitter,password){
 					for(let c = 0;c<t;c++){
 						computedData += packet.parts[c]
 					}
+					console.log(computedData)
 					emitter.emit('data',JSON.parse(decrypt(computedData, password)))
 					removePacket(packets,closedPackets,id)
 				}else{
@@ -168,7 +162,7 @@ function handleData(socket, emitter,password){
 								}
 							})
 						}
-					},750)
+					},PACKET_DELAY_REQUEST)
 				}
 			}
 		}
@@ -198,10 +192,12 @@ const send = (emitter, socket, data, password) => {
 		.update(splitedData[0])
 		.digest().toString()
 	emitter.on('requestPacket',({ id:idd, numbers,t }) => {
-		numbers.forEach(n => {
-			console.log(n,splitedData[n])
-			sendPacket(splitedData[n],n,Array(t))
-		})
+		if(idd === id){
+			numbers.forEach(n => {
+				console.log(n,splitedData)
+				sendPacket(splitedData[n],n,Array(t))
+			})
+		}
 	})
 	const sendPacket = (d,i,t) => {
 		console.log(`${i+1}/${t.length} -->`,[d])
@@ -253,7 +249,7 @@ function entry(API){
 }
 
 function handleEvents(emitter,API){
-	const { RunningConfig } = API
+	const { RunningConfig, Notification } = API
 	emitter.on('info', data => {
 		console.log(data)
 	})
@@ -294,6 +290,12 @@ function handleEvents(emitter,API){
 			content: folderPath
 		})
 	})
+	emitter.on('userIdentified', async ({ username }) => {
+		new Notification({
+			title: `User ${username} just joined #${emitter.data.room}`,
+			content: ''
+		})
+	})
 }
 
 const createSidePanel = (emitter,API) => {
@@ -306,7 +308,7 @@ const createSidePanel = (emitter,API) => {
 		},
 		panel(){
 			function mounted(){
-				emitter.on('userIdentified', async ({ username }) => {
+				emitter.on('userIdentified', ({ username }) => {
 					function userMounted(){
 						emitter.on('userDisconnected', ({ username: disconnectedUsername }) => {
 							if( username === disconnectedUsername ){
