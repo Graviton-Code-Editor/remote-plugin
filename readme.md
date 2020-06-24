@@ -9,7 +9,8 @@ This is a Remote Live Coding plugin for Graviton. Fully encripted and peer to pe
 What you can do for now:
 * See who is in the same room as you
 * Share folders (bidirectionally)
-* Read files
+* See other peer's cursor
+* Read and write files
 
 Contributions are welcomed!
 
