@@ -6,12 +6,17 @@ This is a Remote Live Coding plugin for Graviton. Fully encripted and peer to pe
 
 **NOTE**: This is very **experimantal**, unstable, insecure, etc. Still in work in progress.
 
+What you can do for now:
+* See who is in the same room as you
+* Share folders (bidirectionally)
+* Read files
+
 Contributions are welcomed!
 
 ## 🕹 Developing
 Clone the repo to the desired .graviton2/plugins:
 ```shell
-git clone https://github.com/Graviton-Code-Editor/remote.git 
+git clone https://github.com/Graviton-Code-Editor/remote-plugin.git 
 ```
 
 Install dependencies:
