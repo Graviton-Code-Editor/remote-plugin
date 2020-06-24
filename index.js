@@ -248,6 +248,8 @@ function entry(API){
 	})
 }
 
+const sanitizePath = path => path.replace(/\\\\/gm,"\\")
+
 function handleEvents(emitter,API){
 	const { RunningConfig, Notification } = API
 	emitter.on('info', data => {
@@ -299,19 +301,44 @@ function handleEvents(emitter,API){
 	RunningConfig.on('aTabHasBeenFocused', ({ directory, client, instance }) => {
 		let previousBookmark
 		emitter.on('cursorSetIn', async ({ filePath, line, ch }) => {
-			console.log(directory.replace(/\\\\/gm,"\\"),filePath)
-			if( directory.replace(/\\\\/gm,"\\") === filePath ){
+			if( sanitizePath(directory) === filePath ){
 				if(previousBookmark) previousBookmark.clear()
 				const peerCursor = document.createElement('span');
 				peerCursor.style.borderLeftStyle = 'solid';
-				peerCursor.style.borderLeftWidth = '1px';
-				peerCursor.style.borderLeftColor = 'blue';
+				peerCursor.style.borderLeftWidth = '2px';
+				peerCursor.style.borderLeftColor = 'yellow';
 				previousBookmark = client.do('setBookmark',{
 					instance,
 					line: line -1,
 					ch: ch -1,
 					element: peerCursor
 				})
+			}
+		})
+		emitter.on('contentModified', async ({ filePath, from, to, text, removed }) => {
+			if( sanitizePath(directory) === filePath ){
+				if(text[0] !== ''){ //Add content
+					client.do('replaceRange',{
+						instance,
+						from:{
+							line: from.line,
+							ch: from.ch+1
+						},
+						to,
+						text: text[0]
+					})
+				}
+				if(removed[0] !== ''){ //Remove content
+					client.do('replaceRange',{
+						instance,
+						from:{
+							line: from.line,
+							ch: from.ch
+						},
+						to,
+						text: ''
+					})
+				}
 			}
 		})
 	})
@@ -458,7 +485,6 @@ const createTabEditor = async (directory, folderPath, emitter, API) => {
 		parentFolder: folderPath
 	})
 	if (!isCancelled) {
-		createTabEditor(directory, emitter, API)
 		const { client, instance } = new Editor({
 			language: getExtension(directory),
 			value: await getFileContent(emitter,directory),
@@ -468,11 +494,10 @@ const createTabEditor = async (directory, folderPath, emitter, API) => {
 			tabState,
 			directory
 		})
-		const handleCursor = () => {
+		const handleCursor = (data, changeObj) => {
 			const { line, ch } = client.do('getCursorPosition',{
 				instance
 			})
-			console.log(line,ch)
 			emitter.emit('message',{
 				type: 'cursorSetIn',
 				content:{
@@ -481,6 +506,16 @@ const createTabEditor = async (directory, folderPath, emitter, API) => {
 					ch
 				}
 			})
+			if(changeObj){
+				console.log(changeObj)
+				emitter.emit('message',{
+					type: 'contentModified',
+					content: {
+						...changeObj,
+						filePath: directory
+					}
+				})
+			}
 		}
 		client.do('onChanged',{ instance, action: handleCursor})
 		client.do('onActive',{ instance, action: handleCursor})
