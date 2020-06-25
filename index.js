@@ -30,7 +30,7 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 		announce: true 
 	})
 	swarm.on('connection', (socket, details) => {
-		handleData(socket,emitter,password)
+		handleData(socket,emitter,username,password)
 		allSockets.push(socket)
 		emitter.emit('userFound')
 		socket.on("error", err =>{
@@ -40,8 +40,11 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 				emitter.emit('userLeft',err)
 			}
 		})
-		emitter.on("data", ({ type, content}) => {
-			emitter.emit(type,content)
+		emitter.on("data", ({ type, content, username: peerName}) => {
+			emitter.emit(type,{
+				...content,
+				senderUsername: peerName
+			})
 		})
 		emitter.emit('message',{
 			type: 'identifyUser',
@@ -73,12 +76,12 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 		const msg = JSON.stringify(computedData)
 		if(data.type == 'identifyUser'){
 			allSockets.map( socket => {
-				send(emitter,socket,msg, password)
+				send(emitter,socket,msg, username, password)
 			})
 		}else{
 			Object.keys(emitter.data.users).map( userid => {
 				const { socket, username:user } = emitter.data.users[userid]
-				if( user !== username ) send(emitter,socket, msg, password)
+				if( user !== username ) send(emitter,socket, msg, username, password)
 			})
 		}
 	})
@@ -95,16 +98,15 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 		const msg = JSON.stringify(data)
 		Object.keys(emitter.data.users).map( userid => {
 			const { socket, username: user } = emitter.data.users[userid]
-			if( user !== username ) send(socket, msg, password)
+			if( user !== username ) send(socket, msg, username, password)
 			emitter.emit('userDisconnected',{ username: user, userid })
 			delete emitter.data.users[userid]
 		})
-
 	})
 	return emitter
 }
 
-function handleData(socket, emitter,password){
+function handleData(socket, emitter,username, password){
 	const packets = []
 	const closedPackets = []
 	socket.on('data', data => {
@@ -112,14 +114,13 @@ function handleData(socket, emitter,password){
 			let msg = Buffer.from(data).toString().split("__")[0]
 			let error = false
 			try{
-				console.log(msg)
 				const { d } = JSON.parse(msg)
 			}catch(err){
 				error = err
-				console.log(err)
 			}
 			if( !error ){
-				const { i, t ,d, id } = JSON.parse(msg)
+				const { i, t ,d, id, username: peerName } = JSON.parse(msg)
+				if(peerName === username) return
 				if(!getPacket(packets,id)){
 					packets.push({
 						id,
@@ -131,7 +132,6 @@ function handleData(socket, emitter,password){
 					const packet = getPacket(packets,id)
 					if(packet.parts[i]) return
 					packet.parts[i] = d
-					console.log(` ${i+1}/${t} <--`,[packet.parts[i]])
 				}
 				if(Object.keys(getPacket(packets,id).parts).length === t){
 					if(closedPackets.includes(id)) return
@@ -140,7 +140,6 @@ function handleData(socket, emitter,password){
 					for(let c = 0;c<t;c++){
 						computedData += packet.parts[c]
 					}
-					console.log(computedData)
 					emitter.emit('data',JSON.parse(decrypt(computedData, password)))
 					removePacket(packets,closedPackets,id)
 				}else{
@@ -186,7 +185,7 @@ const getPacket = (packets,idd) => {
 	})
 }
 
-const send = (emitter, socket, data, password) => {
+const send = (emitter, socket, data, username, password) => {
 	const splitedData = encrypt(data,password).match(/.{1,1100}/g)
 	const id = createHash('sha256')
 		.update(splitedData[0])
@@ -194,23 +193,21 @@ const send = (emitter, socket, data, password) => {
 	emitter.on('requestPacket',({ id:idd, numbers,t }) => {
 		if(idd === id){
 			numbers.forEach(n => {
-				console.log(n,splitedData)
 				sendPacket(splitedData[n],n,Array(t))
 			})
 		}
 	})
 	const sendPacket = (d,i,t) => {
-		console.log(`${i+1}/${t.length} -->`,[d])
 		const packet = {
 			i,
 			t:t.length,
 			d,
-			id
+			id,
+			username
 		}
 		socket.write(`${JSON.stringify(packet)}__`)
 	}
 	splitedData.map(sendPacket)
-	console.log(`SENT: ${splitedData.length}/${splitedData.length} ##`,[data])
 }
 
 function entry(API){
@@ -251,11 +248,11 @@ function entry(API){
 const sanitizePath = path => path.replace(/\\\\/gm,"\\")
 
 function handleEvents(emitter,API){
-	const { RunningConfig, Notification } = API
+	const { RunningConfig, Notification, puffin, ContextMenu } = API
 	emitter.on('info', data => {
 		console.log(data)
 	})
-	emitter.on('listFolder', async (folderPath) => {
+	emitter.on('listFolder', async ({ folderPath }) => {
 		fs.readdir(folderPath,(err, list)=>{
 			const computedItems = list.map( item => {
 				const directory = join(folderPath,item)
@@ -289,7 +286,9 @@ function handleEvents(emitter,API){
 	RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
 		emitter.emit('message',{
 			type: 'openedFolder',
-			content: folderPath
+			content: {
+				folderPath
+			}
 		})
 	})
 	emitter.on('userIdentified', async ({ username }) => {
@@ -298,15 +297,43 @@ function handleEvents(emitter,API){
 			content: ''
 		})
 	})
-	RunningConfig.on('aTabHasBeenFocused', ({ directory, client, instance }) => {
+	const cursorClass = puffin.style`
+		& {
+			border-left-style: solid;
+			border-left-width: 1px;
+			border-left-color: yellow;
+			cursor:pointer;
+			margin: 0;
+			padding: 0;
+		}
+	`
+	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
 		let previousBookmark
-		emitter.on('cursorSetIn', async ({ filePath, line, ch }) => {
-			if( sanitizePath(directory) === filePath ){
+		emitter.on('cursorSetIn', async ({ filePath, line, ch, senderUsername }) => {
+			if( sanitizePath(directory) === sanitizePath(filePath) ){
 				if(previousBookmark) previousBookmark.clear()
 				const peerCursor = document.createElement('span');
-				peerCursor.style.borderLeftStyle = 'solid';
-				peerCursor.style.borderLeftWidth = '2px';
-				peerCursor.style.borderLeftColor = 'yellow';
+				peerCursor.classList.add(cursorClass)
+				let closeContext = null
+				peerCursor.onmouseenter = event => {
+					const { close } = new ContextMenu({
+						list:[
+							{
+								label: senderUsername
+							}
+						],
+						parent: document.body,
+						event
+					})
+					closeContext = close
+				}
+				peerCursor.onmouseleave = event => {
+					if(closeContext) {
+						setTimeout(()=>{
+							closeContext()
+						},450)
+					}
+				}
 				previousBookmark = client.do('setBookmark',{
 					instance,
 					line: line -1,
@@ -315,32 +342,58 @@ function handleEvents(emitter,API){
 				})
 			}
 		})
-		emitter.on('contentModified', async ({ filePath, from, to, text, removed }) => {
-			if( sanitizePath(directory) === filePath ){
-				if(text[0] !== ''){ //Add content
-					client.do('replaceRange',{
-						instance,
-						from:{
-							line: from.line,
-							ch: from.ch+1
-						},
-						to,
-						text: text[0]
-					})
-				}
-				if(removed[0] !== ''){ //Remove content
-					client.do('replaceRange',{
-						instance,
-						from:{
-							line: from.line,
-							ch: from.ch
-						},
-						to,
-						text: ''
-					})
-				}
+		emitter.on('contentModified', async ({ filePath, from, to, value }) => {
+			if( sanitizePath(directory) === sanitizePath(filePath) ){
+				client.do('replaceRange',{
+					instance,
+					from,
+					to,
+					text: value
+				})
 			}
 		})
+		let lastChange = null
+		const handleChanges = (changeObj, client, instance, directory, emitter) => {
+			if(lastChange != null){ // Avoid initial value
+				if(JSON.stringify(lastChange) == JSON.stringify(changeObj) || changeObj.origin === "+move") return //Prevent propagation
+			}
+			const lineValue = client.do('getLine',{
+				instance,
+				line: changeObj.from.line
+			})
+			emitter.emit('message',{
+				type: 'contentModified',
+				content: {
+					from:{
+						line: changeObj.from.line,
+						ch: 0
+					},
+					to:{
+						line: changeObj.to.line,
+						ch: 9999
+					},
+					value: lineValue,
+					filePath: directory
+				}
+			})
+			lastChange = changeObj
+		}
+		client.do('onChanged',{ instance, action: (data, changeObj) => handleChanges(changeObj, client, instance, directory, emitter)})
+		client.do('onActive',{ instance, action: (data, changeObj) => handleCursor(emitter, client, instance, directory)})
+	})
+}
+
+const handleCursor = (emitter, client, instance, directory) => {
+	const { line, ch } = client.do('getCursorPosition',{
+		instance
+	})
+	emitter.emit('message',{
+		type: 'cursorSetIn',
+		content:{
+			filePath: directory,
+			line,
+			ch
+		}
 	})
 }
 
@@ -372,7 +425,7 @@ const createSidePanel = (emitter,API) => {
 					})
 					puffin.render(user,this.querySelector("#users"))
 				})
-				emitter.on('openedFolder', async (folderPath) => {
+				emitter.on('openedFolder', async ({ folderPath }) => {
 					let itemOpened = false
 					const remoteExplorer = new Explorer({
 						items:[
@@ -426,7 +479,9 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 	return new Promise((resolve, reject) => {
 		emitter.emit('message',{
 			type: 'listFolder',
-			content: folderPath
+			content: {
+				folderPath
+			}
 		})
 		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
@@ -494,35 +549,8 @@ const createTabEditor = async (directory, folderPath, emitter, API) => {
 			tabState,
 			directory
 		})
-		const handleCursor = (data, changeObj) => {
-			const { line, ch } = client.do('getCursorPosition',{
-				instance
-			})
-			emitter.emit('message',{
-				type: 'cursorSetIn',
-				content:{
-					filePath: directory,
-					line,
-					ch
-				}
-			})
-			if(changeObj){
-				console.log(changeObj)
-				emitter.emit('message',{
-					type: 'contentModified',
-					content: {
-						...changeObj,
-						filePath: directory
-					}
-				})
-			}
-		}
-		client.do('onChanged',{ instance, action: handleCursor})
-		client.do('onActive',{ instance, action: handleCursor})
 	}
-
 }
-
 
 const getFileContent = (emitter, filePath ) => {
 	return new Promise((resolve, reject ) => {
