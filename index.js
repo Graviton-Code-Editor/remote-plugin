@@ -1,6 +1,6 @@
 
 const fs = require('fs')
-const { join, basename, dirname, extname } = require("path")
+const { join, basename, dirname, extname, normalize } = require("path")
 const hyperswarm = require('hyperswarm')
 const { createHash, randomBytes } = require('crypto')
 const { encrypt, decrypt } = require('strong-cryptor')
@@ -245,7 +245,7 @@ function entry(API){
 	})
 }
 
-const sanitizePath = path => path.replace(/\\\\/gm,"\\")
+const sanitizePath = path => normalize(path).replace(/\\/g, '/')
 
 function handleEvents(emitter,API){
 	const { RunningConfig, Notification, puffin, ContextMenu } = API
@@ -264,7 +264,7 @@ function handleEvents(emitter,API){
 			emitter.emit('message',{
 				type: 'returnListFolder',
 				content:{
-					folderPath,
+					folderPath: sanitizePath(folderPath),
 					folderItems: computedItems
 				}
 			})
@@ -276,7 +276,7 @@ function handleEvents(emitter,API){
 				emitter.emit('message',{
 					type: 'returnGetFileContent',
 					content:{
-						filePath,
+						filePath: sanitizePath(filePath),
 						fileContent
 					}
 				})
@@ -287,7 +287,7 @@ function handleEvents(emitter,API){
 		emitter.emit('message',{
 			type: 'openedFolder',
 			content: {
-				folderPath
+				folderPath: sanitizePath(folderPath)
 			}
 		})
 	})
@@ -373,7 +373,7 @@ function handleEvents(emitter,API){
 						ch: 9999
 					},
 					value: lineValue,
-					filePath: directory
+					filePath: sanitizePath(directory)
 				}
 			})
 			lastChange = changeObj
@@ -390,7 +390,7 @@ const handleCursor = (emitter, client, instance, directory) => {
 	emitter.emit('message',{
 		type: 'cursorSetIn',
 		content:{
-			filePath: directory,
+			filePath: sanitizePath(directory),
 			line,
 			ch
 		}
@@ -486,7 +486,7 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
 				let itemsList = []
-				itemsList = folderItems.map(({ name, isFolder}) => {
+				itemsList = folderItems.filter(({ name, isFolder}) => {
 					if(isFolder){
 						let itemOpened = false
 						const itemData = {
@@ -509,7 +509,7 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 						}
 						return itemData
 					}
-				}).filter(Boolean)
+				})
 				folderItems.map(({ name, isFolder }) => {
 					if(!isFolder) {
 						const directory = join(folderPath,name)
