@@ -5,6 +5,7 @@ const hyperswarm = require('hyperswarm')
 const { createHash, randomBytes } = require('crypto')
 const { encrypt, decrypt } = require('strong-cryptor')
 const shortid = require('shortid')
+const tinycolor = require('tinycolor2')
 
 const PACKET_DELAY_REQUEST = 1000
 let globalEmitter
@@ -12,6 +13,7 @@ let globalEmitter
 const joinRoom = (API,room,password, username = Math.random()) => {
 	const { puffin } = API
 	const userid = shortid.generate()
+	const usercolor = tinycolor(tinycolor.random()).toRgbString()
 	const allSockets = []
 	const emitter = new puffin.state({
 		room,
@@ -40,29 +42,34 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 				emitter.emit('userLeft',err)
 			}
 		})
-		emitter.on("data", ({ type, content, username: peerName}) => {
+		emitter.on("data", ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
 			emitter.emit(type,{
 				...content,
-				senderUsername: peerName
+				senderUsername: peerName,
+				senderUsercolor: peerColor,
+				senderUserid: peerId
 			})
 		})
 		emitter.emit('message',{
 			type: 'identifyUser',
 			content:{
 				username,
-				userid
+				userid,
+				usercolor
 			}
 		})
-		emitter.on('identifyUser',({ username, userird }) => {
-			const usernameExists = emitter.data.users[userird] !== undefined
-			emitter.data.users[userird] = {
+		emitter.on('identifyUser',({ username, senderUserid }) => {
+			const usernameExists = emitter.data.users[senderUserid] !== undefined
+			emitter.data.users[senderUserid] = {
 				username,
+				usercolor,
 				socket
 			}
 			if(!usernameExists){
 				emitter.emit('userIdentified',{
 					username,
-					userird
+					userird: senderUserid,
+					usercolor
 				})
 			}
 		})
@@ -71,7 +78,8 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 		const computedData = {
 			...data,
 			username,
-			userid
+			userid,
+			usercolor
 		}
 		const msg = JSON.stringify(computedData)
 		if(data.type == 'identifyUser'){
@@ -79,10 +87,17 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 				send(emitter,socket,msg, username, password)
 			})
 		}else{
-			Object.keys(emitter.data.users).map( userid => {
-				const { socket, username:user } = emitter.data.users[userid]
-				if( user !== username ) send(emitter,socket, msg, username, password)
-			})
+			if(data.userids){ //Send to specific peers
+				data.userids.map( userid => {
+					const { socket, username:user } = emitter.data.users[userid]
+					if( user !== username ) send(emitter,socket, msg, username, password)
+				})
+			}else{ //Send to all identified peers
+				Object.keys(emitter.data.users).map( userid => {
+					const { socket, username:user } = emitter.data.users[userid]
+					if( user !== username ) send(emitter,socket, msg, username, password)
+				})
+			}
 		}
 	})
 	emitter.on('disconnect',() => {
@@ -301,7 +316,6 @@ function handleEvents(emitter,API){
 		& {
 			border-left-style: solid;
 			border-left-width: 1px;
-			border-left-color: yellow;
 			cursor:pointer;
 			margin: 0;
 			padding: 0;
@@ -309,10 +323,11 @@ function handleEvents(emitter,API){
 	`
 	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
 		let previousBookmark
-		emitter.on('cursorSetIn', async ({ filePath, line, ch, senderUsername }) => {
+		emitter.on('cursorSetIn', async ({ filePath, line, ch, senderUsername, senderUsercolor }) => {
 			if( sanitizePath(directory) === sanitizePath(filePath) ){
 				if(previousBookmark) previousBookmark.clear()
 				const peerCursor = document.createElement('span');
+				peerCursor.style.borderLeftColor = senderUsercolor;
 				peerCursor.classList.add(cursorClass)
 				let closeContext = null
 				peerCursor.onmouseenter = event => {
@@ -407,7 +422,7 @@ const createSidePanel = (emitter,API) => {
 		},
 		panel(){
 			function mounted(){
-				emitter.on('userIdentified', ({ username }) => {
+				emitter.on('userIdentified', ({ username, usercolor }) => {
 					function userMounted(){
 						emitter.on('userDisconnected', ({ username: disconnectedUsername }) => {
 							if( username === disconnectedUsername ){
@@ -419,13 +434,17 @@ const createSidePanel = (emitter,API) => {
 						items:[
 							{
 								label:  username,
-								mounted: userMounted
+								mounted: userMounted,
+								decorator:{
+									label: '',
+									background: usercolor
+								}
 							}
 						]
 					})
 					puffin.render(user,this.querySelector("#users"))
 				})
-				emitter.on('openedFolder', async ({ folderPath }) => {
+				emitter.on('openedFolder', async ({ folderPath, senderUserid }) => {
 					let itemOpened = false
 					const remoteExplorer = new Explorer({
 						items:[
@@ -435,7 +454,7 @@ const createSidePanel = (emitter,API) => {
 								icon:'folder.closed',
 								action: async function(e,{ setIcon, setItems }){
 									if( !itemOpened ){
-										const items = await getItemsInFolder(emitter,folderPath,API)
+										const items = await getItemsInFolder(emitter, folderPath, API, senderUserid)
 										setItems(items)
 										setIcon('folder.opened')
 									}else{
@@ -474,11 +493,12 @@ const createSidePanel = (emitter,API) => {
 
 const getExtension = path => extname(path).split('.')[1]
 
-const getItemsInFolder = async (emitter,folderPath,API) => {
+const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 	const { puffin, SidePanel, Explorer, RunningConfig, Editor, Tab } = API
 	return new Promise((resolve, reject) => {
 		emitter.emit('message',{
 			type: 'listFolder',
+			userids:[useridServer],
 			content: {
 				folderPath
 			}
@@ -495,8 +515,8 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 							action: async function(e,{ setIcon, setItems }){
 								if( isFolder ){
 									if( !itemOpened) {
-										const directory = join(folderPath,name)
-										const items = await getItemsInFolder(emitter,directory,API)
+										const directory = sanitizePath(join(folderPath,name))
+										const items = await getItemsInFolder(emitter,directory,API,useridServer)
 										setItems(items)
 										setIcon('folder.opened')
 									}else{
@@ -512,7 +532,7 @@ const getItemsInFolder = async (emitter,folderPath,API) => {
 				})
 				folderItems.map(({ name, isFolder }) => {
 					if(!isFolder) {
-						const directory = join(folderPath,name)
+						const directory = sanitizePath(join(folderPath,name))
 						const itemData = {
 							label: name,
 							icon: `${getExtension(directory)}.lang`,

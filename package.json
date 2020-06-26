@@ -11,7 +11,8 @@
 	"dependencies": {
 		"hyperswarm": "^2.14.0",
 		"shortid": "^2.2.15",
-		"strong-cryptor": "^2.2.0"
+		"strong-cryptor": "^2.2.0",
+		"tinycolor2": "^1.4.1"
 	},
 	"devDependencies": {
 		"@gveditor/sdk": "^0.1.5"
