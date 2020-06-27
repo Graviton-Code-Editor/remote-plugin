@@ -15,7 +15,7 @@ What you can do for now:
 Contributions are welcomed!
 
 ## 🕹 Developing
-Clone the repo to the desired .graviton2/plugins:
+Clone the repo to your .graviton2/plugins:
 ```shell
 git clone https://github.com/Graviton-Code-Editor/remote-plugin.git 
 ```

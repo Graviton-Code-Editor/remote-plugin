@@ -5,28 +5,42 @@ const hyperswarm = require('hyperswarm')
 const { createHash, randomBytes } = require('crypto')
 const { encrypt, decrypt } = require('strong-cryptor')
 const shortid = require('shortid')
-const tinycolor = require('tinycolor2')
+const randomColorRGB = require('random-color-rgb')
+
+const listFolder = require('./src/events/list_folder')
+const tabCreated = require('./src/events/tab_created')
+const readFile = require('./src/events/read_file')
+const userJoined = require('./src/events/user_joined')
+const configDialog = require('./src/config_dialog')
+const createTabEditor = require('./src/tab_editor')
+
+const { sanitizePath, getExtension } = require('./src/utils')
 
 const PACKET_DELAY_REQUEST = 1000
-let globalEmitter
 
-const joinRoom = (API,room,password, username = Math.random()) => {
+const joinRoom = ({
+	emitter,
+	API, 
+	room, 
+	password, 
+	username
+}) => {
 	const { puffin } = API
-	const userid = shortid.generate()
-	const usercolor = tinycolor(tinycolor.random()).toRgbString()
+	const userid = shortid.generate() //Generate user's ID
+	const usercolor = randomColorRGB({min: 70}) //Generate user's color
 	const allSockets = []
-	const emitter = new puffin.state({
+	emitter.data = {
 		room,
 		me:{
 			username,
 			userid
 		},
 		users: {}
-	})
+	}
 	const swarm = hyperswarm()
 	const topic = createHash('sha256')
-	.update(room)
-	.digest()
+		.update(room)
+		.digest()
 	swarm.join(topic, {
 		lookup: true, 
 		announce: true 
@@ -35,14 +49,14 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 		handleData(socket,emitter,username,password)
 		allSockets.push(socket)
 		emitter.emit('userFound')
-		socket.on("error", err =>{
+		socket.on('error', err =>{
 			console.log(err)
 			if( err ){
 				emitter.emit('err',err)
 				emitter.emit('userLeft',err)
 			}
 		})
-		emitter.on("data", ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
+		emitter.on('data', ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
 			emitter.emit(type,{
 				...content,
 				senderUsername: peerName,
@@ -118,7 +132,10 @@ const joinRoom = (API,room,password, username = Math.random()) => {
 			delete emitter.data.users[userid]
 		})
 	})
-	return emitter
+	emitter.emit('connectedToRoom',{
+		room,
+		username
+	})
 }
 
 function handleData(socket, emitter,username, password){
@@ -226,7 +243,9 @@ const send = (emitter, socket, data, username, password) => {
 }
 
 function entry(API){
-	const { StatusBarItem, ContextMenu, Notification } = API
+	const { puffin, StatusBarItem, ContextMenu, Notification } = API 
+	const emitter = new puffin.state({})
+	createSidePanel(emitter,API)
 	new StatusBarItem({
 		label: 'Remote',
 		action(e){
@@ -236,21 +255,25 @@ function entry(API){
 					{
 						label: 'Join',
 						action: async function(){
-							const { room, password, username } = await askForConfig(API) 
-							const emitter = joinRoom(API, room, password, username)
-							globalEmitter = emitter
-							handleEvents(emitter,API)
-							createSidePanel(emitter,API)
+							const { room, password, username } = await configDialog(API) 
+							joinRoom({
+								emitter,
+								API, 
+								room, 
+								password, 
+								username
+							})
 							new Notification({
 								title: `Joined #${room} as ${username}`,
 								content: ''
 							})
+							handleEvents(emitter, API)
 						}
 					},
 					{
 						label: 'Close',
 						action: async function(){
-							if(globalEmitter) globalEmitter.emit('disconnect')
+							if(emitter) emitter.emit('disconnect')
 						}
 					}
 				],
@@ -260,42 +283,34 @@ function entry(API){
 	})
 }
 
-const sanitizePath = path => normalize(path).replace(/\\/g, '/')
-
 function handleEvents(emitter,API){
-	const { RunningConfig, Notification, puffin, ContextMenu } = API
-	emitter.on('info', data => {
-		console.log(data)
-	})
+	const { RunningConfig } = API
 	emitter.on('listFolder', async ({ folderPath }) => {
-		fs.readdir(folderPath,(err, list)=>{
-			const computedItems = list.map( item => {
-				const directory = join(folderPath,item)
-				return {
-					name: item,
-					isFolder: fs.lstatSync(directory).isDirectory()
-				}
-			})
-			emitter.emit('message',{
-				type: 'returnListFolder',
-				content:{
-					folderPath: sanitizePath(folderPath),
-					folderItems: computedItems
-				}
-			})
+		listFolder({
+			emitter,
+			folderPath
+		})
+	})
+	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
+		tabCreated({
+			emitter,
+			directory,
+			client,
+			instance,
+			...API
 		})
 	})
 	emitter.on('getFileContent', async ({ filePath }) => {
-		fs.readFile(filePath,'UTF-8', (err, fileContent) => {
-			if(!err){
-				emitter.emit('message',{
-					type: 'returnGetFileContent',
-					content:{
-						filePath: sanitizePath(filePath),
-						fileContent
-					}
-				})
-			}
+		readFile({
+			emitter,
+			filePath
+		})
+	})
+	emitter.on('userIdentified', async ({ username }) => {
+		userJoined({
+			room: emitter.data.room,
+			username,
+			...API
 		})
 	})
 	RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
@@ -306,110 +321,6 @@ function handleEvents(emitter,API){
 			}
 		})
 	})
-	emitter.on('userIdentified', async ({ username }) => {
-		new Notification({
-			title: `User ${username} just joined #${emitter.data.room}`,
-			content: ''
-		})
-	})
-	const cursorClass = puffin.style`
-		& {
-			border-left-style: solid;
-			border-left-width: 1px;
-			cursor:pointer;
-			margin: 0;
-			padding: 0;
-		}
-	`
-	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
-		let previousBookmark
-		emitter.on('cursorSetIn', async ({ filePath, line, ch, senderUsername, senderUsercolor }) => {
-			if( sanitizePath(directory) === sanitizePath(filePath) ){
-				if(previousBookmark) previousBookmark.clear()
-				const peerCursor = document.createElement('span');
-				peerCursor.style.borderLeftColor = senderUsercolor;
-				peerCursor.classList.add(cursorClass)
-				let closeContext = null
-				peerCursor.onmouseenter = event => {
-					const { close } = new ContextMenu({
-						list:[
-							{
-								label: senderUsername
-							}
-						],
-						parent: document.body,
-						event
-					})
-					closeContext = close
-				}
-				peerCursor.onmouseleave = event => {
-					if(closeContext) {
-						setTimeout(()=>{
-							closeContext()
-						},450)
-					}
-				}
-				previousBookmark = client.do('setBookmark',{
-					instance,
-					line: line -1,
-					ch: ch -1,
-					element: peerCursor
-				})
-			}
-		})
-		emitter.on('contentModified', async ({ filePath, from, to, value }) => {
-			if( sanitizePath(directory) === sanitizePath(filePath) ){
-				client.do('replaceRange',{
-					instance,
-					from,
-					to,
-					text: value
-				})
-			}
-		})
-		let lastChange = null
-		const handleChanges = (changeObj, client, instance, directory, emitter) => {
-			if(lastChange != null){ // Avoid initial value
-				if(JSON.stringify(lastChange) == JSON.stringify(changeObj) || changeObj.origin === "+move") return //Prevent propagation
-			}
-			const lineValue = client.do('getLine',{
-				instance,
-				line: changeObj.from.line
-			})
-			emitter.emit('message',{
-				type: 'contentModified',
-				content: {
-					from:{
-						line: changeObj.from.line,
-						ch: 0
-					},
-					to:{
-						line: changeObj.to.line,
-						ch: 9999
-					},
-					value: lineValue,
-					filePath: sanitizePath(directory)
-				}
-			})
-			lastChange = changeObj
-		}
-		client.do('onChanged',{ instance, action: (data, changeObj) => handleChanges(changeObj, client, instance, directory, emitter)})
-		client.do('onActive',{ instance, action: (data, changeObj) => handleCursor(emitter, client, instance, directory)})
-	})
-}
-
-const handleCursor = (emitter, client, instance, directory) => {
-	const { line, ch } = client.do('getCursorPosition',{
-		instance
-	})
-	emitter.emit('message',{
-		type: 'cursorSetIn',
-		content:{
-			filePath: sanitizePath(directory),
-			line,
-			ch
-		}
-	})
 }
 
 const createSidePanel = (emitter,API) => {
@@ -417,7 +328,7 @@ const createSidePanel = (emitter,API) => {
 	new SidePanel({
 		icon(){
 			return  puffin.element`
-				<i>RC</i>
+				<b style="color: var(--textColor)">RC</b>
 			`
 		},
 		panel(){
@@ -467,31 +378,30 @@ const createSidePanel = (emitter,API) => {
 					})
 					puffin.render(remoteExplorer,this.querySelector("#projects"))
 				})
+				emitter.on('connectedToRoom',({ room, username })=>{
+					const youUser = new Explorer({
+						items:[
+							{
+								label:  emitter.data.me.username,
+								decorator:{
+									label: 'You',
+									background: 'var(--buttonBackground)'
+								}
+							}
+						]
+					})
+					puffin.render(youUser, this.children[0])
+				})
 			}
-			const youUser = new Explorer({
-				items:[
-					{
-						label:  emitter.data.me.username,
-						decorator:{
-							label: 'You',
-							background: 'var(--buttonBackground)'
-						}
-					}
-				]
-			})
 			return puffin.element`
 				<div mounted="${mounted}">
-					<div id="users">
-						${youUser}
-					</div>
+					<div id="users"/>
 					<div id="projects"/>
 				</div>
 			`
 		}
 	})
 }
-
-const getExtension = path => extname(path).split('.')[1]
 
 const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 	const { puffin, SidePanel, Explorer, RunningConfig, Editor, Tab } = API
@@ -506,7 +416,7 @@ const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
 				let itemsList = []
-				itemsList = folderItems.filter(({ name, isFolder}) => {
+				itemsList = folderItems.map(({ name, isFolder}) => {
 					if(isFolder){
 						let itemOpened = false
 						const itemData = {
@@ -529,7 +439,7 @@ const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 						}
 						return itemData
 					}
-				})
+				}).filter(Boolean)
 				folderItems.map(({ name, isFolder }) => {
 					if(!isFolder) {
 						const directory = sanitizePath(join(folderPath,name))
@@ -538,7 +448,12 @@ const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 							icon: `${getExtension(directory)}.lang`,
 							action: async function(e){
 								if( !isFolder ){
-									createTabEditor(directory, folderPath, emitter, API)
+									createTabEditor({
+										filePath: directory, 
+										folderPath, 
+										emitter, 
+										...API
+									})
 								}
 							}
 						}
@@ -550,109 +465,5 @@ const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 		})
 	})
 }
-
-const createTabEditor = async (directory, folderPath, emitter, API) => {
-	const { Editor, Tab } = API
-	const { bodyElement, tabElement, tabState, isCancelled } = new Tab({
-		isEditor: true,
-		title: basename(directory),
-		directory,
-		parentFolder: folderPath
-	})
-	if (!isCancelled) {
-		const { client, instance } = new Editor({
-			language: getExtension(directory),
-			value: await getFileContent(emitter,directory),
-			theme: 'Night',
-			bodyElement,
-			tabElement,
-			tabState,
-			directory
-		})
-	}
-}
-
-const getFileContent = (emitter, filePath ) => {
-	return new Promise((resolve, reject ) => {
-		emitter.emit('message',{
-			type: 'getFileContent',
-			content:{
-				filePath
-			}
-		})
-		emitter.on('returnGetFileContent',({ filePath: returnFilePath, fileContent }) => {
-			if( filePath === returnFilePath ){
-				resolve(fileContent)
-			}
-		})
-	})
-}
-
-const askForConfig = ({ puffin, Dialog, drac }) => {
-	return new Promise((resolve, reject)=>{
-		const dialog = new Dialog({
-			title: 'Login',
-			height: '270px',
-			component(){
-				const styleWrapper = puffin.style`
-					& {
-						display: flex;
-						flex-direction: column;
-					}
-					& > div {
-						display: flex;
-						flex: 1;
-					}
-					& > div label {
-						width: 120px;
-						height: 100%;
-						margin: auto 0;
-					}
-					& > div input {
-						flex: 1;
-						max-width: 60%;
-					}
-				`
-				return puffin.element({
-					components:{
-						Input: drac.Input
-					}
-				})`
-				<div class="${styleWrapper}">
-					<div>
-						<label>Room</label> 
-						<Input placeHolder="CodeParty" id="room"/>
-					</div>
-					<div>
-						<label>Username</label> 
-						<Input placeHolder="Superman" id="username"/>
-					</div>
-					<div>
-						<label>Password</label> 
-						<Input type="password" id="password"/>
-					</div>
-				</div>
-				`
-			},
-			buttons:[
-				{
-					label: 'Connect',
-					action(){
-						const room = document.getElementById('room').value || 'public'
-						const username = document.getElementById('username').value 
-						const password = document.getElementById('password').value.repeat(32).substring(0,32)
-						resolve({
-							room,
-							username,
-							password
-						})
-					}
-				}
-			]
-		})
-		dialog.launch()
-	})
-}
-
 
 module.exports = { entry }
