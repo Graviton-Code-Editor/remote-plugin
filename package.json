@@ -3,10 +3,9 @@
 	"id": "remote-plugin",
 	"description": "Remote Live Coding",
 	"author": "Marc Espín Sanz",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"main": "index.js",
 	"scripts": {
-		"watch": "gvsdk --entry package.json --target plugin --mode dev",
 		"build": "gvsdk --entry package.json --target plugin --mode release"
 	},
 	"dependencies": {

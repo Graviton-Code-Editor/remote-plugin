@@ -56,14 +56,6 @@ const joinRoom = ({
 				emitter.emit('userLeft',err)
 			}
 		})
-		emitter.on('data', ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
-			emitter.emit(type,{
-				...content,
-				senderUsername: peerName,
-				senderUsercolor: peerColor,
-				senderUserid: peerId
-			})
-		})
 		emitter.emit('message',{
 			type: 'identifyUser',
 			content:{
@@ -72,7 +64,7 @@ const joinRoom = ({
 				usercolor
 			}
 		})
-		emitter.on('identifyUser',({ username, senderUserid }) => {
+		emitter.on('identifyUser',({ username, senderUserid, usercolor }) => {
 			const usernameExists = emitter.data.users[senderUserid] !== undefined
 			emitter.data.users[senderUserid] = {
 				username,
@@ -82,10 +74,18 @@ const joinRoom = ({
 			if(!usernameExists){
 				emitter.emit('userIdentified',{
 					username,
-					userird: senderUserid,
+					userid: senderUserid,
 					usercolor
 				})
 			}
+		})
+	})
+	emitter.on('data', ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
+		emitter.emit(type,{
+			...content,
+			senderUsername: peerName,
+			senderUsercolor: peerColor,
+			senderUserid: peerId
 		})
 	})
 	emitter.on('message',data =>{
@@ -104,12 +104,12 @@ const joinRoom = ({
 			if(data.userids){ //Send to specific peers
 				data.userids.map( userid => {
 					const { socket, username:user } = emitter.data.users[userid]
-					if( user !== username ) send(emitter,socket, msg, username, password)
+					if( user !== username ) send(emitter, socket, msg, username, password)
 				})
 			}else{ //Send to all identified peers
 				Object.keys(emitter.data.users).map( userid => {
 					const { socket, username:user } = emitter.data.users[userid]
-					if( user !== username ) send(emitter,socket, msg, username, password)
+					if( user !== username ) send(emitter, socket, msg, username, password)
 				})
 			}
 		}
@@ -127,14 +127,16 @@ const joinRoom = ({
 		const msg = JSON.stringify(data)
 		Object.keys(emitter.data.users).map( userid => {
 			const { socket, username: user } = emitter.data.users[userid]
-			if( user !== username ) send(socket, msg, username, password)
+			if( user !== username ) send(emitter, socket, msg, username, password)
 			emitter.emit('userDisconnected',{ username: user, userid })
 			delete emitter.data.users[userid]
 		})
 	})
 	emitter.emit('connectedToRoom',{
 		room,
-		username
+		username,
+		userid,
+		usercolor
 	})
 }
 
@@ -271,9 +273,9 @@ function entry(API){
 						}
 					},
 					{
-						label: 'Close',
-						action: async function(){
-							if(emitter) emitter.emit('disconnect')
+						label: 'Disconnect',
+						action(){
+							emitter.emit('disconnect',{})
 						}
 					}
 				],
@@ -325,36 +327,70 @@ function handleEvents(emitter,API){
 
 const createSidePanel = (emitter,API) => {
 	const { puffin, SidePanel, Explorer, RunningConfig } = API
+	const iconStyle = puffin.style`
+		& > * {
+			stroke: var(--iconFill)
+		}
+	`
 	new SidePanel({
 		icon(){
 			return  puffin.element`
-				<b style="color: var(--textColor)">RC</b>
+				<svg class="${iconStyle}" width="38" height="28" viewBox="0 0 38 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<rect x="1" y="21" width="14" height="6" rx="2" stroke-width="3"/>
+					<circle cx="7.69391" cy="13.7688" r="4.49565" stroke-width="3"/>
+					<rect x="24" y="13" width="13" height="6" rx="2" stroke-width="3"/>
+					<circle cx="30.3061" cy="5.49565" r="4.49565"stroke-width="3"/>
+					<path d="M14.597 9.86821L17.2567 7.14069L19.6369 8.92586L22.6122 7.14069" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
 			`
 		},
 		panel(){
 			function mounted(){
-				emitter.on('userIdentified', ({ username, usercolor }) => {
-					function userMounted(){
-						emitter.on('userDisconnected', ({ username: disconnectedUsername }) => {
-							if( username === disconnectedUsername ){
-								this.remove()
+				let activeUsers = {}
+				const getCurrentUsers = () => {
+					return Object.keys(activeUsers).map( userid => {
+						const { username, usercolor, isMe } = activeUsers[userid]
+						return {
+							label:  username,
+							decorator:{
+								label: isMe? 'You': '',
+								background: usercolor
 							}
-						})
-					}
-					const user = new Explorer({
-						items:[
-							{
-								label:  username,
-								mounted: userMounted,
-								decorator:{
-									label: '',
-									background: usercolor
-								}
-							}
-						]
+						}
 					})
-					puffin.render(user,this.querySelector("#users"))
+				}
+				
+				const usersExplorer = new Explorer({
+					items:[
+						{
+							label:  'Users',
+							items:[],
+							mounted({ setItems }){
+								emitter.on('connectedToRoom',({ room, userid, username, usercolor })=>{
+									activeUsers[userid] = {
+										username,
+										usercolor,
+										isMe : true
+									}
+									setItems(getCurrentUsers())
+								})
+								emitter.on('userIdentified', ({ userid, username, usercolor }) => {
+									activeUsers[userid] = {
+										username,
+										usercolor,
+										isMe : false
+									}
+									setItems(getCurrentUsers())
+								})
+								emitter.on('userDisconnected', ({ userid, username, usercolor }) => {
+									delete activeUsers[userid]
+									setItems(getCurrentUsers())
+								})
+							}
+						}
+					]
 				})
+				puffin.render(usersExplorer,this.querySelector("#users"))
 				emitter.on('openedFolder', async ({ folderPath, senderUserid }) => {
 					let itemOpened = false
 					const remoteExplorer = new Explorer({
@@ -377,20 +413,6 @@ const createSidePanel = (emitter,API) => {
 						]
 					})
 					puffin.render(remoteExplorer,this.querySelector("#projects"))
-				})
-				emitter.on('connectedToRoom',({ room, username })=>{
-					const youUser = new Explorer({
-						items:[
-							{
-								label:  emitter.data.me.username,
-								decorator:{
-									label: 'You',
-									background: 'var(--buttonBackground)'
-								}
-							}
-						]
-					})
-					puffin.render(youUser, this.children[0])
 				})
 			}
 			return puffin.element`
