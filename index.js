@@ -55,6 +55,10 @@ const joinRoom = ({
 				emitter.emit('err',err)
 				emitter.emit('userLeft',err)
 			}
+			userDisconnnected(socket)
+		})
+		socket.on('disconnect', err =>{
+			userDisconnnected(socket)
 		})
 		emitter.emit('message',{
 			type: 'identifyUser',
@@ -80,6 +84,17 @@ const joinRoom = ({
 			}
 		})
 	})
+	const userDisconnnected = peerSocket => {
+		Object.keys(emitter.data.users).map( userid => {
+			const { socket: userSocket, username: user } = emitter.data.users[userid]
+			if( peerSocket === userSocket){
+				emitter.emit('userDisconnected',{ 
+					username: user, 
+					userid 
+				})
+			}
+		})
+	}
 	emitter.on('data', ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
 		emitter.emit(type,{
 			...content,
@@ -364,15 +379,22 @@ const createSidePanel = (emitter,API) => {
 					items:[
 						{
 							label:  'Users',
-							items:[],
-							mounted({ setItems }){
+							decorator:{
+								label: '0'
+							},
+							items: [],
+							mounted({ setItems, setDecorator }){
 								emitter.on('connectedToRoom',({ room, userid, username, usercolor })=>{
 									activeUsers[userid] = {
 										username,
 										usercolor,
 										isMe : true
 									}
-									setItems(getCurrentUsers())
+									const currentUsers = getCurrentUsers()
+									setItems(currentUsers)
+									setDecorator({
+										label: Object.keys(currentUsers).length
+									})
 								})
 								emitter.on('userIdentified', ({ userid, username, usercolor }) => {
 									activeUsers[userid] = {
@@ -380,11 +402,26 @@ const createSidePanel = (emitter,API) => {
 										usercolor,
 										isMe : false
 									}
-									setItems(getCurrentUsers())
+									const currentUsers = getCurrentUsers()
+									setItems(currentUsers)
+									setDecorator({
+										label: Object.keys(currentUsers).length
+									})
 								})
 								emitter.on('userDisconnected', ({ userid, username, usercolor }) => {
 									delete activeUsers[userid]
-									setItems(getCurrentUsers())
+									const currentUsers = getCurrentUsers()
+									setItems(currentUsers)
+									setDecorator({
+										label: Object.keys(currentUsers).length
+									})
+								})
+								emitter.on('disconnect',()=>{
+									delete activeUsers[emitter.data.me.userid]
+									setDecorator({
+										label: '0'
+									})
+									setItems([])
 								})
 							}
 						}
@@ -430,7 +467,7 @@ const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 	return new Promise((resolve, reject) => {
 		emitter.emit('message',{
 			type: 'listFolder',
-			userids:[useridServer],
+			userids: [useridServer],
 			content: {
 				folderPath
 			}
