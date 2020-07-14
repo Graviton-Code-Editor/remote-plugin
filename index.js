@@ -260,44 +260,47 @@ const send = (emitter, socket, data, username, password) => {
 }
 
 function entry(API){
-	const { puffin, StatusBarItem, ContextMenu, Notification } = API 
-	const emitter = new puffin.state({})
-	createSidePanel(emitter,API)
-	new StatusBarItem({
-		label: 'Remote',
-		action(e){
-			new ContextMenu({
-				parent: e.target,
-				list:[
-					{
-						label: 'Join',
-						action: async function(){
-							const { room, password, username } = await configDialog(API) 
-							joinRoom({
-								emitter,
-								API, 
-								room, 
-								password, 
-								username
-							})
-							new Notification({
-								title: `Joined #${room} as ${username}`,
-								content: ''
-							})
-							handleEvents(emitter, API)
+	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
+	RunningConfig.on('allPluginsLoaded',function(){
+		const emitter = new puffin.state({})
+		createSidePanel(emitter,API)
+		new StatusBarItem({
+			label: 'Remote',
+			action(e){
+				new ContextMenu({
+					parent: e.target,
+					list:[
+						{
+							label: 'Join',
+							action: async function(){
+								const { room, password, username } = await configDialog(API) 
+								joinRoom({
+									emitter,
+									API, 
+									room, 
+									password, 
+									username
+								})
+								new Notification({
+									title: `Joined #${room} as ${username}`,
+									content: ''
+								})
+								handleEvents(emitter, API)
+							}
+						},
+						{
+							label: 'Disconnect',
+							action(){
+								emitter.emit('disconnect',{})
+							}
 						}
-					},
-					{
-						label: 'Disconnect',
-						action(){
-							emitter.emit('disconnect',{})
-						}
-					}
-				],
-				event: e
-			})
-		}
+					],
+					event: e
+				})
+			}
+		})
 	})
+	
 }
 
 function handleEvents(emitter,API){
