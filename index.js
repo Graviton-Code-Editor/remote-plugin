@@ -344,7 +344,7 @@ function handleEvents(emitter,API){
 }
 
 const createSidePanel = (emitter,API) => {
-	const { puffin, SidePanel, Explorer, RunningConfig } = API
+	const { puffin, SidePanel, Explorer, FilesExplorer } = API
 	const iconStyle = puffin.style`
 		& > * {
 			stroke: var(--iconFill)
@@ -431,28 +431,18 @@ const createSidePanel = (emitter,API) => {
 					]
 				})
 				puffin.render(usersExplorer,this.querySelector("#users"))
+
 				emitter.on('openedFolder', async ({ folderPath, senderUserid }) => {
-					let itemOpened = false
-					const remoteExplorer = new Explorer({
-						items:[
-							{
-								label: basename(folderPath),
-								items: [],
-								icon:'folder.closed',
-								action: async function(e,{ setIcon, setItems }){
-									if( !itemOpened ){
-										const items = await getItemsInFolder(emitter, folderPath, API, senderUserid)
-										setItems(items)
-										setIcon('folder.opened')
-									}else{
-										setIcon('folder.closed')
-									}
-									itemOpened = !itemOpened
-								}
+					new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
+						provider: {
+							listDir: async function(){
+								return await getItemsInFolder(emitter, folderPath, senderUserid)
+							},
+							isGitRepo(){
+								return new Promise( res => res(false))
 							}
-						]
+						}
 					})
-					puffin.render(remoteExplorer,this.querySelector("#projects"))
 				})
 			}
 			return puffin.element`
@@ -465,9 +455,8 @@ const createSidePanel = (emitter,API) => {
 	})
 }
 
-const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
-	const { puffin, SidePanel, Explorer, RunningConfig, Editor, Tab } = API
-	return new Promise((resolve, reject) => {
+const getItemsInFolder = async (emitter, folderPath, useridServer) => {
+	return new Promise(resolve => {
 		emitter.emit('message',{
 			type: 'listFolder',
 			userids: [useridServer],
@@ -477,52 +466,7 @@ const getItemsInFolder = async (emitter, folderPath, API, useridServer) => {
 		})
 		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
-				let itemsList = []
-				itemsList = folderItems.map(({ name, isFolder}) => {
-					if(isFolder){
-						let itemOpened = false
-						const itemData = {
-							label: name,
-							icon: 'folder.closed',
-							action: async function(e,{ setIcon, setItems }){
-								if( isFolder ){
-									if( !itemOpened) {
-										const directory = sanitizePath(join(folderPath,name))
-										const items = await getItemsInFolder(emitter,directory,API,useridServer)
-										setItems(items)
-										setIcon('folder.opened')
-									}else{
-										setIcon('folder.closed')
-									}
-								}
-								itemOpened = !itemOpened
-							},
-							items:[]
-						}
-						return itemData
-					}
-				}).filter(Boolean)
-				folderItems.map(({ name, isFolder }) => {
-					if(!isFolder) {
-						const directory = sanitizePath(join(folderPath,name))
-						const itemData = {
-							label: name,
-							icon: `${getExtension(directory)}.lang`,
-							action: async function(e){
-								if( !isFolder ){
-									createTabEditor({
-										filePath: directory, 
-										folderPath, 
-										emitter, 
-										...API
-									})
-								}
-							}
-						}
-						itemsList.push(itemData)
-					}
-				})
-				resolve(itemsList)
+				resolve(folderItems)
 			}
 		})
 	})
