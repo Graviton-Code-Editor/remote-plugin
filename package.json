@@ -10,6 +10,7 @@
 	},
 	"dependencies": {
 		"hyperswarm": "^2.14.0",
+		"lodash": "^4.17.19",
 		"random-color-rgb": "^1.1.1",
 		"shortid": "^2.2.15",
 		"strong-cryptor": "^2.2.0"
