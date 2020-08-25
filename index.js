@@ -321,6 +321,7 @@ function handleEvents(emitter,API){
 		})
 	})
 	emitter.on('getFileContent', async ({ filePath }) => {
+		console.log(filePath)
 		readFile({
 			emitter,
 			filePath
@@ -435,11 +436,30 @@ const createSidePanel = (emitter,API) => {
 				emitter.on('openedFolder', async ({ folderPath, senderUserid }) => {
 					new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
 						provider: {
-							listDir: async function(){
-								return await getItemsInFolder(emitter, folderPath, senderUserid)
+							listDir: async function(path){
+								return await getItemsInFolder(emitter, path, senderUserid)
 							},
 							isGitRepo(){
 								return new Promise( res => res(false))
+							},
+							readFile: function (path) {
+								return new Promise( async (res) => {
+									
+									emitter.on('returnGetFileContent',({
+										filePath,
+										fileContent
+									}) => {
+										if(filePath === sanitizePath(path)){
+											res(fileContent)
+										}
+									})
+									emitter.emit('message',{
+										type: 'getFileContent',
+										content: {
+											filePath: path
+										}
+									})
+								})
 							}
 						}
 					})
