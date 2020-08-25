@@ -321,7 +321,6 @@ function handleEvents(emitter,API){
 		})
 	})
 	emitter.on('getFileContent', async ({ filePath }) => {
-		console.log(filePath)
 		readFile({
 			emitter,
 			filePath
@@ -453,10 +452,11 @@ const createSidePanel = (emitter,API) => {
 											res(fileContent)
 										}
 									})
+									console.log(sanitizePath(path))
 									emitter.emit('message',{
 										type: 'getFileContent',
 										content: {
-											filePath: path
+											filePath: sanitizePath(path)
 										}
 									})
 								})

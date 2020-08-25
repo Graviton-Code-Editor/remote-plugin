@@ -2,7 +2,7 @@ const fs = require('fs')
 const { sanitizePath } = require('../utils')
 
 const readFile = ({ emitter, filePath }) => {
-	fs.readFile(filePath,'UTF-8', (err, fileContent) => {
+	fs.readFile(sanitizePath(filePath),'UTF-8', (err, fileContent) => {
 		if(!err){
 			emitter.emit('message',{
 				type: 'returnGetFileContent',
@@ -11,6 +11,8 @@ const readFile = ({ emitter, filePath }) => {
 					fileContent
 				}
 			})
+		}else{
+			console.error(err)
 		}
 	})
 }
