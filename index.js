@@ -26,11 +26,18 @@ class Instance {
 		this.password = createHash('sha256').update(password).digest()
 		this.emitter = emitter
 		this.emitter.data = this
-		this.conn = new WebSocket('ws://graviton-api.herokuapp.com/websockets')
+		this.conn = new WebSocket('ws://localhost:2035/websockets')
 
 		this.conn.onopen = () => {
-			this.send('userJoin')
-			this.emitter.emit('instance/connected',{})
+			this.send('userJoin',{
+				username: this.username
+			})
+			this.emitter.emit('instance/connected',{
+				room: this.room,
+				username: this.username,
+				userid: this.userid,
+				usercolor: this.usercolor
+			})
 		}
 
 		this.conn.onerror = error => {
@@ -38,12 +45,11 @@ class Instance {
 		}
 
 		this.conn.onmessage = e => {
-			const { userid, usercolor, username, room, type, data} = JSON.parse(e.data)
-
+			const { encrypted = true, userid, usercolor, username, type, data} = JSON.parse(e.data)
 			const encryptor = new Decryptor({
 				key: this.password
 			})
-			const decryptedData = encryptor.decrypt(data)
+			const decryptedData = encrypted ? encryptor.decrypt(data) : data
 
 			this.emitter.emit(`room/${type}`, {
 				...JSON.parse(decryptedData),
@@ -55,9 +61,12 @@ class Instance {
 		this.emitter.on('message', data => {
 			this.send(data.type, data.content)
 		})
+		this.emitter.on('disconnect', data => {
+			this.conn.close()
+		})
 	}
 	send(eventName, data = {}){
-
+		
 		const encryptor = new Encryptor({
 			key: this.password
 		})
@@ -71,7 +80,8 @@ class Instance {
 				userid: this.userid,
 				room: this.room,
 				type: eventName,
-				data: encryptedData
+				data: encryptedData,
+				encrypted: true
 			}
 		))
 	}
@@ -121,7 +131,7 @@ function entry(API){
 						{
 							label: 'Disconnect',
 							action(){
-								emitter.emit('disconnect',{})
+								emitter.emit('instance/disconnect',{})
 							}
 						}
 					],
@@ -141,15 +151,6 @@ function handleEvents(emitter,API){
 			folderPath
 		})
 	})
-	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
-		tabCreated({
-			emitter,
-			directory,
-			client,
-			instance,
-			...API
-		})
-	})
 	emitter.on('room/getFileContent', async ({ filePath }) => {
 		readFile({
 			emitter,
@@ -163,12 +164,31 @@ function handleEvents(emitter,API){
 			...API
 		})
 	})
+	emitter.on('room/welcome', async ({ users }) => {
+		users.map(({ username, userid, usercolor }) => {
+			if(userid === emitter.data.userid) return
+			emitter.emit('room/userJoin',{
+				senderUsername: username,
+				senderUserid: userid,
+				senderUsercolor: usercolor
+			})
+		})
+	})
 	RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
 		emitter.emit('message',{
 			type: 'openedFolder',
 			content: {
 				folderPath: sanitizePath(folderPath)
 			}
+		})
+	})
+	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
+		tabCreated({
+			emitter,
+			directory,
+			client,
+			instance,
+			...API
 		})
 	})
 }
@@ -217,7 +237,7 @@ const createSidePanel = (emitter,API) => {
 							},
 							items: [],
 							mounted({ setItems, setDecorator }){
-								emitter.on('connectedToRoom',({ room, userid, username, usercolor })=>{
+								emitter.on('instance/connected',({ room, userid, username, usercolor })=>{
 									activeUsers[userid] = {
 										username,
 										usercolor,
@@ -228,6 +248,7 @@ const createSidePanel = (emitter,API) => {
 									setDecorator({
 										label: Object.keys(currentUsers).length
 									})
+									document.getElementById('room_name').innerText = `Room: ${room}`
 								})
 								emitter.on('room/userJoin', ({ senderUserid, senderUsername, senderUsercolor }) => {
 									activeUsers[senderUserid] = {
@@ -265,6 +286,9 @@ const createSidePanel = (emitter,API) => {
 				emitter.on('room/openedFolder', async ({ folderPath, senderUserid }) => {
 					new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
 						provider: {
+							decorator:{
+								text: 'remote'
+							},
 							listDir: async function(path){
 								return await getItemsInFolder(emitter, path, senderUserid)
 							},
@@ -282,7 +306,6 @@ const createSidePanel = (emitter,API) => {
 											res(fileContent)
 										}
 									})
-									console.log(sanitizePath(path))
 									emitter.emit('message',{
 										type: 'getFileContent',
 										content: {
@@ -295,10 +318,19 @@ const createSidePanel = (emitter,API) => {
 					})
 				})
 			}
+			
+			const wrapperStyle = puffin.style`
+				& p {
+					color: var(--textColor);
+					font-size: 12px;
+					margin: 2px 15px;
+				}
+			`
+			
 			return puffin.element`
-				<div mounted="${mounted}">
+				<div class="${wrapperStyle}"mounted="${mounted}">
+					<p id="room_name">Room (disconnected) </p>
 					<div id="users"/>
-					<div id="projects"/>
 				</div>
 			`
 		}
