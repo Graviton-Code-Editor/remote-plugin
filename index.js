@@ -26,7 +26,7 @@ class Instance {
 		this.password = createHash('sha256').update(password).digest()
 		this.emitter = emitter
 		this.emitter.data = this
-		this.conn = new WebSocket('ws://localhost:2035/websockets')
+		this.conn = new WebSocket('ws://graviton-api.herokuapp.com/websockets')
 
 		this.conn.onopen = () => {
 			this.send('userJoin',{
