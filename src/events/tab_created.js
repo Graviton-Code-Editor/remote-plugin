@@ -18,7 +18,7 @@ const tabCreated = ({
 		}
 	`
 	let previousBookmark
-	emitter.on('cursorSetIn', async ({ filePath, line, ch, senderUsername, senderUsercolor,  }) => {
+	emitter.on('room/cursorSetIn', async ({ filePath, line, ch, senderUsername, senderUsercolor,  }) => {
 		if( sanitizePath(directory) === sanitizePath(filePath) ){
 			if(previousBookmark) previousBookmark.clear()
 			const peerCursor = document.createElement('span');
@@ -52,7 +52,7 @@ const tabCreated = ({
 			})
 		}
 	})
-	emitter.on('contentModified', async ({ filePath, from, to, value }) => {
+	emitter.on('room/contentModified', async ({ filePath, from, to, value }) => {
 		if( sanitizePath(directory) === sanitizePath(filePath) ){
 			client.do('replaceRange',{
 				instance,

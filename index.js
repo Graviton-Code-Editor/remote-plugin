@@ -1,9 +1,6 @@
 
 const fs = require('fs')
 const { join, basename, dirname, extname, normalize } = require("path")
-const hyperswarm = require('hyperswarm')
-const { createHash, randomBytes } = require('crypto')
-const { encrypt, decrypt } = require('strong-cryptor')
 const shortid = require('shortid')
 const randomColorRGB = require('random-color-rgb')
 
@@ -16,248 +13,78 @@ const createTabEditor = require('./src/tab_editor')
 
 const { sanitizePath, getExtension } = require('./src/utils')
 
-const PACKET_DELAY_REQUEST = 1000
+const WebSocket = require('ws')
+const { createHash } = require('crypto')
+const { Encryptor, Decryptor } = require('strong-cryptor')
 
-const joinRoom = ({
-	emitter,
-	API, 
-	room, 
-	password, 
-	username
-}) => {
-	const { puffin } = API
-	const userid = shortid.generate() //Generate user's ID
-	const usercolor = randomColorRGB({min: 70}) //Generate user's color
-	const allSockets = []
-	emitter.data = {
-		room,
-		me:{
-			username,
-			userid
-		},
-		users: {}
-	}
-	const swarm = hyperswarm()
-	const topic = createHash('sha256')
-		.update(room)
-		.digest()
-	swarm.join(topic, {
-		lookup: true, 
-		announce: true 
-	})
-	swarm.on('connection', (socket, details) => {
-		handleData(socket,emitter,username,password)
-		allSockets.push(socket)
-		emitter.emit('userFound')
-		socket.on('error', err =>{
-			console.log(err)
-			if( err ){
-				emitter.emit('err',err)
-				emitter.emit('userLeft',err)
-			}
-			userDisconnnected(socket)
-		})
-		socket.on('disconnect', err =>{
-			userDisconnnected(socket)
-		})
-		emitter.emit('message',{
-			type: 'identifyUser',
-			content:{
-				username,
-				userid,
-				usercolor
-			}
-		})
-		emitter.on('identifyUser',({ username, senderUserid, usercolor }) => {
-			const usernameExists = emitter.data.users[senderUserid] !== undefined
-			emitter.data.users[senderUserid] = {
-				username,
-				usercolor,
-				socket
-			}
-			if(!usernameExists){
-				emitter.emit('userIdentified',{
-					username,
-					userid: senderUserid,
-					usercolor
-				})
-			}
-		})
-	})
-	const userDisconnnected = peerSocket => {
-		Object.keys(emitter.data.users).map( userid => {
-			const { socket: userSocket, username: user } = emitter.data.users[userid]
-			if( peerSocket === userSocket){
-				emitter.emit('userDisconnected',{ 
-					username: user, 
-					userid 
-				})
-			}
-		})
-	}
-	emitter.on('data', ({ type, content, username: peerName, usercolor: peerColor, userid: peerId }) => {
-		emitter.emit(type,{
-			...content,
-			senderUsername: peerName,
-			senderUsercolor: peerColor,
-			senderUserid: peerId
-		})
-	})
-	emitter.on('message',data =>{
-		const computedData = {
-			...data,
-			username,
-			userid,
-			usercolor
+class Instance {
+	constructor({ emitter, room, username, password }){
+		this.room = room
+		this.username = username
+		this.userid = shortid.generate()
+		this.usercolor = randomColorRGB({min: 70})
+		this.password = createHash('sha256').update(password).digest()
+		this.emitter = emitter
+		this.emitter.data = this
+		this.conn = new WebSocket('ws://graviton-api.herokuapp.com/websockets')
+
+		this.conn.onopen = () => {
+			this.send('userJoin')
+			this.emitter.emit('instance/connected',{})
 		}
-		const msg = JSON.stringify(computedData)
-		if(data.type == 'identifyUser'){
-			allSockets.map( socket => {
-				send(emitter,socket,msg, username, password)
+
+		this.conn.onerror = error => {
+			this.emitter.emit('error', error)
+		}
+
+		this.conn.onmessage = e => {
+			const { userid, usercolor, username, room, type, data} = JSON.parse(e.data)
+
+			const encryptor = new Decryptor({
+				key: this.password
 			})
-		}else{
-			if(data.userids){ //Send to specific peers
-				data.userids.map( userid => {
-					const { socket, username:user } = emitter.data.users[userid]
-					if( user !== username ) send(emitter, socket, msg, username, password)
-				})
-			}else{ //Send to all identified peers
-				Object.keys(emitter.data.users).map( userid => {
-					const { socket, username:user } = emitter.data.users[userid]
-					if( user !== username ) send(emitter, socket, msg, username, password)
-				})
-			}
-		}
-	})
-	emitter.on('disconnect',() => {
-		const data = {
-			type: 'userDisconnected',
-			content:{
-				username,
-				userid
-			},
-			username,
-			userid
-		}
-		const msg = JSON.stringify(data)
-		Object.keys(emitter.data.users).map( userid => {
-			const { socket, username: user } = emitter.data.users[userid]
-			if( user !== username ) send(emitter, socket, msg, username, password)
-			emitter.emit('userDisconnected',{ username: user, userid })
-			delete emitter.data.users[userid]
-		})
-	})
-	emitter.emit('connectedToRoom',{
-		room,
-		username,
-		userid,
-		usercolor
-	})
-}
+			const decryptedData = encryptor.decrypt(data)
 
-function handleData(socket, emitter,username, password){
-	const packets = []
-	const closedPackets = []
-	socket.on('data', data => {
-		if( data && typeof data == "object" ){
-			let msg = Buffer.from(data).toString().split("__")[0]
-			let error = false
-			try{
-				const { d } = JSON.parse(msg)
-			}catch(err){
-				error = err
-			}
-			if( !error ){
-				const { i, t ,d, id, username: peerName } = JSON.parse(msg)
-				if(peerName === username) return
-				if(!getPacket(packets,id)){
-					packets.push({
-						id,
-						t,
-						parts: {}
-					})
-				}
-				if(i < t){
-					const packet = getPacket(packets,id)
-					if(packet.parts[i]) return
-					packet.parts[i] = d
-				}
-				if(Object.keys(getPacket(packets,id).parts).length === t){
-					if(closedPackets.includes(id)) return
-					let packet = getPacket(packets,id)
-					let computedData = ""
-					for(let c = 0;c<t;c++){
-						computedData += packet.parts[c]
-					}
-					emitter.emit('data',JSON.parse(decrypt(computedData, password)))
-					removePacket(packets,closedPackets,id)
-				}else{
-					setTimeout(()=>{
-						const packet = getPacket(packets,id)
-						if(packet && !closedPackets.includes(id)){
-							const packetsNotFound = []
-							for(let c = 0;c<t;c++){
-								if(!packet.parts[c]){
-									packetsNotFound.push(c)
-								}
-							}
-							emitter.emit('message',{
-								type: 'requestPacket',
-								content: {
-									id,
-									numbers: packetsNotFound,
-									t
-								}
-							})
-						}
-					},PACKET_DELAY_REQUEST)
-				}
-			}
-		}
-	})
-}
-
-const removePacket = (packets,closedPackets,idd) => {
-	let where 
-	packets.find(({id},i) => {
-		if(id === id) {
-			closedPackets.push(id)
-			where = i
-		}
-	})
-	packets.splice(where,1)
-}
-
-const getPacket = (packets,idd) => {
-	return packets.find(({id}) => {
-		return id === idd
-	})
-}
-
-const send = (emitter, socket, data, username, password) => {
-	const splitedData = encrypt(data,password).match(/.{1,1100}/g)
-	const id = createHash('sha256')
-		.update(splitedData[0])
-		.digest().toString()
-	emitter.on('requestPacket',({ id:idd, numbers,t }) => {
-		if(idd === id){
-			numbers.forEach(n => {
-				sendPacket(splitedData[n],n,Array(t))
+			this.emitter.emit(`room/${type}`, {
+				...JSON.parse(decryptedData),
+				senderUsername: username,
+				senderUserid: userid,
+				senderUsercolor: usercolor
 			})
 		}
-	})
-	const sendPacket = (d,i,t) => {
-		const packet = {
-			i,
-			t:t.length,
-			d,
-			id,
-			username
-		}
-		socket.write(`${JSON.stringify(packet)}__`)
+		this.emitter.on('message', data => {
+			this.send(data.type, data.content)
+		})
 	}
-	splitedData.map(sendPacket)
+	send(eventName, data = {}){
+
+		const encryptor = new Encryptor({
+			key: this.password
+		})
+
+		const encryptedData = encryptor.encrypt(JSON.stringify(data))
+
+		this.conn.send(JSON.stringify(
+			{
+				username: this.username,
+				usercolor: this.usercolor,
+				userid: this.userid,
+				room: this.room,
+				type: eventName,
+				data: encryptedData
+			}
+		))
+	}
+	on(eventName, args){
+		return this.emitter.on(eventName, args)
+	}
+	waitToConnect(){
+		return new Promise((res) => {
+			this.on('instance/connected', () => res())
+		})
+	}
 }
+
 
 function entry(API){
 	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
@@ -274,13 +101,16 @@ function entry(API){
 							label: 'Join',
 							action: async function(){
 								const { room, password, username } = await configDialog(API) 
-								joinRoom({
+								
+								const my_instance = new Instance({
 									emitter,
-									API, 
 									room, 
 									password, 
 									username
 								})
+								
+								await my_instance.waitToConnect()
+								
 								new Notification({
 									title: `Joined #${room} as ${username}`,
 									content: ''
@@ -305,7 +135,7 @@ function entry(API){
 
 function handleEvents(emitter,API){
 	const { RunningConfig } = API
-	emitter.on('listFolder', async ({ folderPath }) => {
+	emitter.on('room/listFolder', async ({ folderPath }) => {
 		listFolder({
 			emitter,
 			folderPath
@@ -320,16 +150,16 @@ function handleEvents(emitter,API){
 			...API
 		})
 	})
-	emitter.on('getFileContent', async ({ filePath }) => {
+	emitter.on('room/getFileContent', async ({ filePath }) => {
 		readFile({
 			emitter,
 			filePath
 		})
 	})
-	emitter.on('userIdentified', async ({ username }) => {
+	emitter.on('room/userJoin', async ({ senderUsername }) => {
 		userJoined({
 			room: emitter.data.room,
-			username,
+			username: senderUsername,
 			...API
 		})
 	})
@@ -399,10 +229,10 @@ const createSidePanel = (emitter,API) => {
 										label: Object.keys(currentUsers).length
 									})
 								})
-								emitter.on('userIdentified', ({ userid, username, usercolor }) => {
-									activeUsers[userid] = {
-										username,
-										usercolor,
+								emitter.on('room/userJoin', ({ senderUserid, senderUsername, senderUsercolor }) => {
+									activeUsers[senderUserid] = {
+										username: senderUsername,
+										usercolor: senderUsercolor,
 										isMe : false
 									}
 									const currentUsers = getCurrentUsers()
@@ -411,7 +241,7 @@ const createSidePanel = (emitter,API) => {
 										label: Object.keys(currentUsers).length
 									})
 								})
-								emitter.on('userDisconnected', ({ userid, username, usercolor }) => {
+								emitter.on('room/userDisconnected', ({ userid, username, usercolor }) => {
 									delete activeUsers[userid]
 									const currentUsers = getCurrentUsers()
 									setItems(currentUsers)
@@ -432,7 +262,7 @@ const createSidePanel = (emitter,API) => {
 				})
 				puffin.render(usersExplorer,this.querySelector("#users"))
 
-				emitter.on('openedFolder', async ({ folderPath, senderUserid }) => {
+				emitter.on('room/openedFolder', async ({ folderPath, senderUserid }) => {
 					new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
 						provider: {
 							listDir: async function(path){
@@ -444,7 +274,7 @@ const createSidePanel = (emitter,API) => {
 							readFile: function (path) {
 								return new Promise( async (res) => {
 									
-									emitter.on('returnGetFileContent',({
+									emitter.on('room/returnGetFileContent',({
 										filePath,
 										fileContent
 									}) => {
@@ -484,7 +314,7 @@ const getItemsInFolder = async (emitter, folderPath, useridServer) => {
 				folderPath
 			}
 		})
-		emitter.on('returnListFolder',({ folderPath: returnedFolderPath, folderItems })=>{
+		emitter.on('room/listFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
 				resolve(folderItems)
 			}
