@@ -314,7 +314,7 @@ const getItemsInFolder = async (emitter, folderPath, useridServer) => {
 				folderPath
 			}
 		})
-		emitter.on('room/listFolder',({ folderPath: returnedFolderPath, folderItems })=>{
+		emitter.on('room/returnlistFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
 				resolve(folderItems)
 			}

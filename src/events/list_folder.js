@@ -16,7 +16,7 @@ const listFolder = ({ folderPath, emitter }) => {
 				}
 			})
 			emitter.emit('message',{
-				type: 'listFolder',
+				type: 'returnlistFolder',
 				content:{
 					folderPath,
 					folderItems: computedItems
