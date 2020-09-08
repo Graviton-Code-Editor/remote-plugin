@@ -223,6 +223,14 @@ const createSidePanel = (emitter,API) => {
 							decorator:{
 								label: isMe? 'You': '',
 								background: usercolor
+							},
+							iconComp(){
+								return puffin.element`
+									<svg width="20" height="20" viewBox="0 0 45 45" fill="none" xmlns="http://www.w3.org/2000/svg">
+										<path d="M9 38.2727C9 32.6494 13.5586 28.0909 19.1818 28.0909H26.8182C32.4414 28.0909 37 32.6494 37 38.2727V38.2727H9V38.2727Z" fill="#919191"/>
+										<path d="M11.5454 20.4545C11.5454 14.1284 16.6738 9 23 9V9C29.3262 9 34.4545 14.1284 34.4545 20.4545V20.4545C34.4545 26.7807 29.3262 31.9091 23 31.9091V31.9091C16.6738 31.9091 11.5454 26.7807 11.5454 20.4545V20.4545Z" fill="#919191"/>
+									</svg>
+								`
 							}
 						}
 					})
@@ -236,6 +244,16 @@ const createSidePanel = (emitter,API) => {
 								label: '0'
 							},
 							items: [],
+							iconComp(){
+								return puffin.element`
+									<svg width="20" height="20" viewBox="0 0 45 45" fill="none" xmlns="http://www.w3.org/2000/svg">
+										<path d="M16 29.9999C16 26.1579 19.1145 23.0434 22.9565 23.0434H29.0435C32.8855 23.0434 36 26.1579 36 29.9999V29.9999H16V29.9999Z" fill="#919191"/>
+										<path d="M17.8182 17.8261C17.8182 13.5039 21.322 10 25.6443 10H26.3557C30.6779 10 34.1818 13.5039 34.1818 17.8261V17.8261C34.1818 22.1483 30.6779 25.6522 26.3557 25.6522H25.6442C21.322 25.6522 17.8182 22.1483 17.8182 17.8261V17.8261Z" fill="#919191"/>
+										<path d="M10 33.9999C10 30.1579 13.1145 27.0434 16.9565 27.0434H23.0435C26.8855 27.0434 30 30.1579 30 33.9999V33.9999H10V33.9999Z" fill="#A4A4A4"/>
+										<path d="M11.8182 21.8261C11.8182 17.5039 15.322 14 19.6443 14H20.3557C24.6779 14 28.1818 17.5039 28.1818 21.8261V21.8261C28.1818 26.1483 24.6779 29.6522 20.3557 29.6522H19.6442C15.322 29.6522 11.8182 26.1483 11.8182 21.8261V21.8261Z" fill="#A4A4A4"/>
+									</svg>
+								`
+							},
 							mounted({ setItems, setDecorator }){
 								emitter.on('instance/connected',({ room, userid, username, usercolor })=>{
 									activeUsers[userid] = {
@@ -248,7 +266,7 @@ const createSidePanel = (emitter,API) => {
 									setDecorator({
 										label: Object.keys(currentUsers).length
 									})
-									document.getElementById('room_name').innerText = `Room: ${room}`
+									document.getElementById('room_name').innerText = room
 								})
 								emitter.on('room/userJoin', ({ senderUserid, senderUsername, senderUsercolor }) => {
 									activeUsers[senderUserid] = {
@@ -298,7 +316,7 @@ const createSidePanel = (emitter,API) => {
 							readFile: function (path) {
 								return new Promise( async (res) => {
 									
-									emitter.on('room/returnGetFileContent',({
+									emitter.once('room/returnGetFileContent',({
 										filePath,
 										fileContent
 									}) => {
@@ -329,12 +347,52 @@ const createSidePanel = (emitter,API) => {
 			
 			return puffin.element`
 				<div class="${wrapperStyle}"mounted="${mounted}">
-					<p id="room_name">Room (disconnected) </p>
+					${getInfoCards(emitter, API)}
 					<div id="users"/>
 				</div>
 			`
 		}
 	})
+}
+
+const getInfoCards = (emitter, API) => {
+	const { puffin, drac } = API
+	const cardStyle = puffin.style`
+		& > div{
+			background: var(--sidebarBackground);
+			border-radius: 15px;
+			height: 110px;
+			width: 110px;
+			padding: 30px 15px;
+			user-select: none;
+		}
+		& > div > h6 {
+			margin: 3px 0px;
+			font-size: 11px;
+			font-weight: bold;
+		}
+		& > div >  span {
+			font-size: 13px;
+			color: var(--accentColor);
+			margin: 2px 0px;
+		}
+	`
+	return puffin.element({
+		components:{
+			Card: drac.Card
+		}
+	})`
+		<div class="${cardStyle}">
+			<Card >
+				<h6>ROOM</h6>
+				<span id="room_name">None</span>
+			</Card>
+			<Card>
+				<h6>TIME</h6>
+				<span>00:00</span>
+			</Card>
+		</div>
+	`
 }
 
 const getItemsInFolder = async (emitter, folderPath, useridServer) => {
@@ -346,7 +404,7 @@ const getItemsInFolder = async (emitter, folderPath, useridServer) => {
 				folderPath
 			}
 		})
-		emitter.on('room/returnlistFolder',({ folderPath: returnedFolderPath, folderItems })=>{
+		emitter.once('room/returnlistFolder',({ folderPath: returnedFolderPath, folderItems })=>{
 			if( folderPath === returnedFolderPath ){
 				resolve(folderItems)
 			}
