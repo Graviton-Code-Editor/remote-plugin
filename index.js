@@ -3,6 +3,8 @@ const fs = require('fs')
 const { join, basename, dirname, extname, normalize } = require("path")
 const shortid = require('shortid')
 const randomColorRGB = require('random-color-rgb')
+const dayjs = require('dayjs')
+const relativeTime = require('dayjs/plugin/relativeTime')
 
 const listFolder = require('./src/events/list_folder')
 const tabCreated = require('./src/events/tab_created')
@@ -255,7 +257,7 @@ const createSidePanel = (emitter,API) => {
 								`
 							},
 							mounted({ setItems, setDecorator }){
-								emitter.on('instance/connected',({ room, userid, username, usercolor })=>{
+								emitter.on('instance/connected',({ room, userid, username, usercolor }) => {
 									activeUsers[userid] = {
 										username,
 										usercolor,
@@ -267,6 +269,13 @@ const createSidePanel = (emitter,API) => {
 										label: Object.keys(currentUsers).length
 									})
 									document.getElementById('room_name').innerText = room
+									
+									dayjs.extend(relativeTime)
+									const startedDate = dayjs(new Date())
+									setInterval(() => {
+										document.getElementById('time_counter').innerText = startedDate.fromNow()
+									})
+									
 								})
 								emitter.on('room/userJoin', ({ senderUserid, senderUsername, senderUsercolor }) => {
 									activeUsers[senderUserid] = {
@@ -365,6 +374,7 @@ const getInfoCards = (emitter, API) => {
 			width: 110px;
 			padding: 30px 15px;
 			user-select: none;
+			overflow: hidden;
 		}
 		& > div > h6 {
 			margin: 3px 0px;
@@ -377,6 +387,7 @@ const getInfoCards = (emitter, API) => {
 			margin: 2px 0px;
 		}
 	`
+	
 	return puffin.element({
 		components:{
 			Card: drac.Card
@@ -389,7 +400,7 @@ const getInfoCards = (emitter, API) => {
 			</Card>
 			<Card>
 				<h6>TIME</h6>
-				<span>00:00</span>
+				<span id="time_counter">None</span>
 			</Card>
 		</div>
 	`

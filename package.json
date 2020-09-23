@@ -9,6 +9,7 @@
 		"build": "gvsdk --entry package.json --target plugin --mode release"
 	},
 	"dependencies": {
+		"dayjs": "^1.8.36",
 		"lodash": "^4.17.19",
 		"random-color-rgb": "^1.1.1",
 		"shortid": "^2.2.15",
