@@ -1,7 +1,7 @@
 const configDialog = ({ puffin, Dialog, drac }) => {
 	return new Promise((resolve, reject)=>{
 		const dialog = new Dialog({
-			title: 'Login',
+			title: 'Join',
 			height: '270px',
 			component(){
 				const styleWrapper = puffin.style`

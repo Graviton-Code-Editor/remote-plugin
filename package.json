@@ -5,18 +5,20 @@
 	"author": "Marc Espín Sanz",
 	"version": "0.1.6",
 	"main": "index.js",
+	"mainSrc": "index.js",
 	"scripts": {
-		"build": "gvsdk --entry package.json --target plugin --mode release"
+		"build": "gvsdk -p . -t plugin -m release"
 	},
 	"dependencies": {
 		"dayjs": "^1.8.36",
 		"lodash": "^4.17.19",
 		"random-color-rgb": "^1.1.1",
 		"shortid": "^2.2.15",
-		"strong-cryptor": "^2.2.0"
+		"strong-cryptor": "^2.2.0",
+		"ws": "^7.3.1"
 	},
 	"devDependencies": {
-		"@gveditor/sdk": "^0.1.5",
+		"@gveditor/sdk": "^0.4.4",
 		"node-forge": "^0.10.0"
 	}
 }

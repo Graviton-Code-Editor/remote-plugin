@@ -2,7 +2,7 @@
 
 ![MadeForGraviton](https://raw.githubusercontent.com/Graviton-Code-Editor/website/master/src/badges/made_for_graviton.svg?sanitize=true)
 
-This is a Remote Live Coding plugin for Graviton. Fully encripted and peer to peer.
+This is a Remote Live Coding plugin for Graviton.
 
 **NOTE**: This is very **experimantal**, unstable, insecure, etc. Still in work in progress.
 
@@ -11,6 +11,7 @@ What you can do for now:
 * Share folders (bidirectionally)
 * See other peer's cursor
 * Read and write files
+* See how much time you have been coding
 
 Contributions are welcomed!
 
