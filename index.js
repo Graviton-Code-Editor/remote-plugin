@@ -34,6 +34,10 @@ class Instance {
 			this.send('userJoin',{
 				username: this.username
 			})
+			setInterval(() => {
+				this.conn.ping()
+				console.log("ping")
+			}, 30000)
 			this.emitter.emit('instance/connected',{
 				room: this.room,
 				username: this.username,
@@ -308,11 +312,11 @@ const createSidePanel = (emitter,API) => {
 				})
 				puffin.render(usersExplorer,this.querySelector("#users"))
 
-				emitter.on('room/openedFolder', async ({ folderPath, senderUserid }) => {
+				emitter.on('room/openedFolder', async ({ folderPath, senderUserid, senderUsername }) => {
 					new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
 						provider: {
 							decorator:{
-								text: 'remote'
+								text: `remote@${senderUsername}`
 							},
 							listDir: async function(path){
 								return await getItemsInFolder(emitter, path, senderUserid)
