@@ -106,6 +106,30 @@ function entry(API){
 	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
 	const emitter = new puffin.state({})
 	createSidePanel(emitter,API)
+	
+	RunningConfig.emit('addLocalTerminalAccessory',{
+		component(state){
+			
+			function goShare(){
+				emitter.emit('message',{
+					type: 'terminalShared',
+					content: {}
+				})
+				state.on('write', (data) => {
+					console.log(data)
+					emitter.emit('message',{
+						type: 'terminalUpdated',
+						content: {
+							data
+						}
+					})
+				})
+			}
+			
+			return puffin.element`<button :click="${goShare}">share</button>`
+		}
+	})
+		
 	new StatusBarItem({
 		label: 'Remote',
 		action(e){
@@ -144,11 +168,24 @@ function entry(API){
 			})
 		}
 	})
-	
 }
 
 function handleEvents(emitter,API){
 	const { RunningConfig } = API
+	
+	emitter.on('room/terminalShared', async ({ senderUsername }) => {
+		RunningConfig.emit('registerTerminalShell',{
+			name: `remote@${senderUsername}`,
+			onCreated(state){
+				emitter.on('room/terminalUpdated',({ data, senderUsername: terminalAuthor }) => {
+					if(senderUsername === terminalAuthor){
+						state.emit('write', data)
+					}
+				})
+			}
+		})
+	})
+
 	emitter.on('room/listFolder', async ({ folderPath }) => {
 		listFolder({
 			emitter,
