@@ -28,7 +28,8 @@ class Instance {
 		this.emitter = emitter
 		this.emitter.data = this
 		this.conn = new WebSocket('ws://graviton-api.herokuapp.com/websockets')
-
+		this.roomcode = `${this.room}##${password}`
+		
 		this.conn.onopen = () => {
 			//Tell the whole room you joined
 			this.send('userJoin',{
@@ -124,7 +125,6 @@ export function entry(API){
 					state.emit("breakLine");
 				}),
 				state.on('write', (data) => {
-					console.log(data)
 					emitter.emit('message',{
 						type: 'terminalUpdated',
 						content: {
@@ -430,7 +430,7 @@ const createSidePanel = (emitter,API) => {
 }
 
 const getInfoCards = (emitter, API) => {
-	const { puffin, drac } = API
+	const { puffin, drac, Notification } = API
 	const cardStyle = puffin.style`
 		& > div{
 			background: var(--sidebarBackground);
@@ -453,14 +453,21 @@ const getInfoCards = (emitter, API) => {
 		}
 	`
 	
+	function shareRoom(){
+		new Notification({
+			title: `Room's Code`,
+			content: emitter.data.roomcode
+		})
+	}
+	
 	return puffin.element({
 		components:{
 			Card: drac.Card
 		}
 	})`
 		<div class="${cardStyle}">
-			<Card >
-				<h6>ROOM</h6>
+			<Card :click="${shareRoom}">
+				<h6>SHARE ROOM</h6>
 				<span id="room_name">None</span>
 			</Card>
 			<Card>
