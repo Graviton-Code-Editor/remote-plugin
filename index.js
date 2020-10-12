@@ -1,23 +1,22 @@
+import fs from 'fs'
+import { join, basename, dirname, extname, normalize } from "path"
+import shortid from 'shortid'
+import randomColorRGB from 'random-color-rgb'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
 
-const fs = require('fs')
-const { join, basename, dirname, extname, normalize } = require("path")
-const shortid = require('shortid')
-const randomColorRGB = require('random-color-rgb')
-const dayjs = require('dayjs')
-const relativeTime = require('dayjs/plugin/relativeTime')
+import listFolder from './src/events/list_folder'
+import tabCreated from './src/events/tab_created'
+import readFile from './src/events/read_file'
+import userJoined from './src/events/user_joined'
+import configDialog from './src/config_dialog'
+import createTabEditor from './src/tab_editor'
 
-const listFolder = require('./src/events/list_folder')
-const tabCreated = require('./src/events/tab_created')
-const readFile = require('./src/events/read_file')
-const userJoined = require('./src/events/user_joined')
-const configDialog = require('./src/config_dialog')
-const createTabEditor = require('./src/tab_editor')
+import { sanitizePath, getExtension }from './src/utils'
 
-const { sanitizePath, getExtension } = require('./src/utils')
-
-const WebSocket = require('ws')
-const { createHash } = require('crypto')
-const { Encryptor, Decryptor } = require('strong-cryptor')
+import WebSocket from 'ws'
+import { createHash } from 'crypto'
+import { Encryptor, Decryptor } from 'strong-cryptor'
 
 class Instance {
 	constructor({ emitter, room, username, password }){
@@ -31,13 +30,16 @@ class Instance {
 		this.conn = new WebSocket('ws://graviton-api.herokuapp.com/websockets')
 
 		this.conn.onopen = () => {
+			//Tell the whole room you joined
 			this.send('userJoin',{
 				username: this.username
 			})
+			
 			setInterval(() => {
+				//Emit a ping to the connection doesn't die
 				this.conn.ping()
-				console.log("ping")
 			}, 30000)
+			
 			this.emitter.emit('instance/connected',{
 				room: this.room,
 				username: this.username,
@@ -102,7 +104,7 @@ class Instance {
 }
 
 
-function entry(API){
+export function entry(API){
 	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
 	const emitter = new puffin.state({})
 	createSidePanel(emitter,API)
@@ -115,6 +117,12 @@ function entry(API){
 					type: 'terminalShared',
 					content: {}
 				})
+				emitter.on("room/terminalOutput",({ data }) => {
+					state.emit("data", data);
+				}),
+					emitter.on("room/terminalBreakLine", () => {
+					state.emit("breakLine");
+				}),
 				state.on('write', (data) => {
 					console.log(data)
 					emitter.emit('message',{
@@ -181,6 +189,24 @@ function handleEvents(emitter,API){
 					if(senderUsername === terminalAuthor){
 						state.emit('write', data)
 					}
+				})
+				
+				state.on('keyPressed',(key) => {
+					if(key === 'Enter'){
+						emitter.emit('message', {
+							type: 'terminalBreakLine',
+							content: {}
+						})
+					}
+				})
+				
+				state.on('data', (data) => {
+					emitter.emit('message', {
+						type: 'terminalOutput',
+						content:{
+							data
+						}
+					})
 				})
 			}
 		})
@@ -461,5 +487,3 @@ const getItemsInFolder = async (emitter, folderPath, useridServer) => {
 		})
 	})
 }
-
-module.exports = { entry }

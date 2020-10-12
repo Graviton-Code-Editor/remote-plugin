@@ -3,15 +3,16 @@
 	"id": "remote-plugin",
 	"description": "Remote Live Coding",
 	"author": "Marc Espín Sanz",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"main": "index.js",
 	"mainSrc": "index.js",
+	"mainDev": "dist/index.js",
 	"scripts": {
-		"build": "gvsdk -p . -t plugin -m release"
+		"build": "gvsdk -p . -t plugin -m release",
+		"watch": "gvsdk -p . -t plugin -m dev"
 	},
 	"dependencies": {
 		"dayjs": "^1.8.36",
-		"lodash": "^4.17.19",
 		"random-color-rgb": "^1.1.1",
 		"shortid": "^2.2.15",
 		"strong-cryptor": "^2.2.0",
@@ -19,6 +20,6 @@
 	},
 	"devDependencies": {
 		"@gveditor/sdk": "^0.4.4",
-		"node-forge": "^0.10.0"
+		"lodash": "^4.17.19"
 	}
 }

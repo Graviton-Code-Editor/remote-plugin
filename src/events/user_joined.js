@@ -9,4 +9,4 @@ const userJoined = ({
 	})
 }
 
-module.exports = userJoined
+export default userJoined

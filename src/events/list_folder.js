@@ -1,6 +1,6 @@
-const fs = require('fs')
-const { join } = require('path')
-const { sanitizePath  } = require('../utils')
+import fs from 'fs'
+import { join } from 'path'
+import { sanitizePath  } from '../utils'
 
 const listFolder = ({ folderPath, emitter }) => {
 	let folderDir = sanitizePath(folderPath)
@@ -26,4 +26,4 @@ const listFolder = ({ folderPath, emitter }) => {
 	})
 }
 
-module.exports = listFolder
+export default listFolder

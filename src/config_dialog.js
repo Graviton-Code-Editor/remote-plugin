@@ -64,4 +64,4 @@ const configDialog = ({ puffin, Dialog, drac }) => {
 	})
 }
 
-module.exports = configDialog
+export default configDialog

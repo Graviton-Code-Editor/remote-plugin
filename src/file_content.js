@@ -17,4 +17,4 @@ const getFileContent = ({
 	})
 }
 
-module.exports = getFileContent
+export default getFileContent

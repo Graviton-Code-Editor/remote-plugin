@@ -1,5 +1,5 @@
-const fs = require('fs')
-const { sanitizePath } = require('../utils')
+import fs from 'fs'
+import { sanitizePath  } from '../utils'
 
 const readFile = ({ emitter, filePath }) => {
 	fs.readFile(sanitizePath(filePath),'UTF-8', (err, fileContent) => {
@@ -17,4 +17,4 @@ const readFile = ({ emitter, filePath }) => {
 	})
 }
 
-module.exports = readFile
+export default readFile

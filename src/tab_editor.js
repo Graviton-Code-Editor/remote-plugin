@@ -1,6 +1,6 @@
-const { getExtension } = require('./utils')
-const { basename } = require('path')
-const getFileContent = require('./file_content')
+import { getExtension } from './utils'
+import { basename } from 'path'
+import getFileContent from './file_content'
 
 const createTabEditor = async ({
 	filePath, 
@@ -31,4 +31,4 @@ const createTabEditor = async ({
 	}
 }
 
-module.exports = createTabEditor
+export default createTabEditor

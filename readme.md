@@ -1,4 +1,4 @@
-# 🔭 Remote Live Coding
+# 🔭 Remote Plugin
 
 ![MadeForGraviton](https://raw.githubusercontent.com/Graviton-Code-Editor/website/master/src/badges/made_for_graviton.svg?sanitize=true)
 
@@ -12,6 +12,7 @@ What you can do for now:
 * See other peer's cursor
 * Read and write files
 * See how much time you have been coding
+* Share terminals (read, and write!)
 
 Contributions are welcomed!
 
@@ -24,6 +25,11 @@ git clone https://github.com/Graviton-Code-Editor/remote-plugin.git
 Install dependencies:
 ```shell
 npm install
+```
+
+Watch for changes (development):
+```shell
+npm run watch
 ```
 
 Build (optional):

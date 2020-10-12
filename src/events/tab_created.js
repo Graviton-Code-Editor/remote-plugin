@@ -1,4 +1,4 @@
-const { sanitizePath } = require('../utils')
+import { sanitizePath  } from '../utils'
 
 const tabCreated = ({ 
 	emitter, 
@@ -129,4 +129,4 @@ const handleCursor = ({
 	})
 }
 
-module.exports = tabCreated
+export default tabCreated
