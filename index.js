@@ -430,7 +430,7 @@ const createSidePanel = (emitter,API) => {
 }
 
 const getInfoCards = (emitter, API) => {
-	const { puffin, drac, Notification } = API
+	const { puffin, drac, Dialog } = API
 	const cardStyle = puffin.style`
 		& > div{
 			background: var(--sidebarBackground);
@@ -454,10 +454,18 @@ const getInfoCards = (emitter, API) => {
 	`
 	
 	function shareRoom(){
-		new Notification({
+		const codeDialog = new Dialog({
 			title: `Room's Code`,
-			content: emitter.data.roomcode
+			component(){
+				return puffin.element`<p style="user-select: all; word-break: break-all;">${emitter.data.roomcode}</p>`
+			},
+			buttons:[
+				{
+					label: 'misc.Accept'
+				}
+			]
 		})
+		codeDialog.launch()
 	}
 	
 	return puffin.element({
