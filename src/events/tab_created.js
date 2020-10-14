@@ -5,9 +5,18 @@ const tabCreated = ({
 	puffin, 
 	directory, 
 	instance, 
-	client, 
+	client,
+	tabElement,
 	ContextMenu  
 }) => {
+
+	emitter.on('room/writeFileContent', async ({ filePath, fileContent }) => {
+		console.log(filePath, directory)
+		if(filePath === directory){
+			tabElement.state.emit('savedMe')
+		}
+	})
+	
 	const cursorClass = puffin.style`
 		& {
 			border-left-style: solid;

@@ -8,6 +8,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import listFolder from './src/events/list_folder'
 import tabCreated from './src/events/tab_created'
 import readFile from './src/events/read_file'
+import writeFile from './src/events/write_file'
 import userJoined from './src/events/user_joined'
 import configDialog from './src/config_dialog'
 import createTabEditor from './src/tab_editor'
@@ -224,6 +225,13 @@ function handleEvents(emitter,API){
 			filePath
 		})
 	})
+	emitter.on('room/writeFileContent', async ({ filePath, fileContent }) => {
+		writeFile({
+			emitter,
+			filePath,
+			fileContent
+		})
+	})
 	emitter.on('room/userJoin', async ({ senderUsername }) => {
 		userJoined({
 			room: emitter.data.room,
@@ -249,12 +257,13 @@ function handleEvents(emitter,API){
 			}
 		})
 	})
-	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance }) => {
+	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance, tabElement }) => {
 		tabCreated({
 			emitter,
 			directory,
 			client,
 			instance,
+			tabElement,
 			...API
 		})
 	})
@@ -404,6 +413,18 @@ const createSidePanel = (emitter,API) => {
 											filePath: sanitizePath(path)
 										}
 									})
+								})
+							},
+							writeFile: function (filePath, fileContent) {
+								return new Promise( async (res) => {
+									emitter.emit('message',{
+										type: 'writeFileContent',
+										content: {
+											filePath,
+											fileContent
+										}
+									})
+									res()
 								})
 							}
 						}
