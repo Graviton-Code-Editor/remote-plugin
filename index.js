@@ -15,7 +15,6 @@ import createTabEditor from './src/tab_editor'
 
 import { sanitizePath, getExtension }from './src/utils'
 
-import WebSocket from 'ws'
 import { createHash } from 'crypto'
 import { Encryptor, Decryptor } from 'strong-cryptor'
 
@@ -38,8 +37,9 @@ class Instance {
 			})
 			
 			setInterval(() => {
-				//Emit a ping to the connection doesn't die
-				this.conn.ping()
+				//Send a ping to the connection socket, so it doesn't die
+				this.send('connectionPing',{})
+				
 			}, 30000)
 			
 			this.emitter.emit('instance/connected',{
@@ -110,7 +110,7 @@ export function entry(API){
 	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
 	const emitter = new puffin.state({})
 	createSidePanel(emitter,API)
-	
+	console.log(Notification)
 	RunningConfig.emit('addLocalTerminalAccessory',{
 		component(state){
 			

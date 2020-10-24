@@ -15,8 +15,7 @@
 		"dayjs": "^1.8.36",
 		"random-color-rgb": "^1.1.1",
 		"shortid": "^2.2.15",
-		"strong-cryptor": "^2.2.0",
-		"ws": "^7.3.1"
+		"strong-cryptor": "^2.2.0"
 	},
 	"devDependencies": {
 		"@gveditor/sdk": "^0.4.4",
