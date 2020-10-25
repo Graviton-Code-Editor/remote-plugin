@@ -1,4 +1,3 @@
-import fs from 'fs'
 import { join, basename, dirname, extname, normalize } from "path"
 import shortid from 'shortid'
 import randomColorRGB from 'random-color-rgb'
@@ -16,7 +15,7 @@ import createTabEditor from './src/tab_editor'
 import { sanitizePath, getExtension }from './src/utils'
 
 import { createHash } from 'crypto'
-import { Encryptor, Decryptor } from 'strong-cryptor'
+import simpleEncryptor from 'simple-encryptor'
 
 class Instance {
 	constructor({ emitter, room, username, password }){
@@ -29,6 +28,7 @@ class Instance {
 		this.emitter.data = this
 		this.conn = new WebSocket('ws://graviton-api.herokuapp.com/websockets')
 		this.roomcode = `${this.room}##${password}`
+		this.encryptor = simpleEncryptor(password)
 		
 		this.conn.onopen = () => {
 			//Tell the whole room you joined
@@ -56,13 +56,11 @@ class Instance {
 
 		this.conn.onmessage = e => {
 			const { encrypted = true, userid, usercolor, username, type, data} = JSON.parse(e.data)
-			const encryptor = new Decryptor({
-				key: this.password
-			})
-			const decryptedData = encrypted ? encryptor.decrypt(data) : data
-
+			
+			const decryptedData = encrypted ? this.encryptor.decrypt(data) : JSON.parse(data)
+			
 			this.emitter.emit(`room/${type}`, {
-				...JSON.parse(decryptedData),
+				...decryptedData,
 				senderUsername: username,
 				senderUserid: userid,
 				senderUsercolor: usercolor
@@ -77,11 +75,7 @@ class Instance {
 	}
 	send(eventName, data = {}){
 		
-		const encryptor = new Encryptor({
-			key: this.password
-		})
-
-		const encryptedData = encryptor.encrypt(JSON.stringify(data))
+		const encryptedData = this.encryptor.encrypt(data)
 
 		this.conn.send(JSON.stringify(
 			{

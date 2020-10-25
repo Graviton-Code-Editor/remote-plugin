@@ -1,8 +1,8 @@
-import fs from 'fs'
 import { join } from 'path'
 import { sanitizePath  } from '../utils'
 
 const listFolder = ({ folderPath, emitter }) => {
+	const fs = window.require('fs')
 	let folderDir = sanitizePath(folderPath)
 	fs.readdir(folderDir,(err, list)=>{
 		if(err){

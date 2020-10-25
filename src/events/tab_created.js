@@ -11,7 +11,6 @@ const tabCreated = ({
 }) => {
 
 	emitter.on('room/writeFileContent', async ({ filePath, fileContent }) => {
-		console.log(filePath, directory)
 		if(filePath === directory){
 			tabElement.state.emit('savedMe')
 		}
