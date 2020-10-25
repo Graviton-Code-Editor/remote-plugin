@@ -16,6 +16,11 @@ What you can do for now:
 
 Contributions are welcomed!
 
+## Todo
+* [] Create line on other clients when creating a new line
+* [] Ability to disconnect
+* [] Implement `watchDir` on ExplorerProvider
+
 ## 🕹 Developing
 Clone the repo to your .graviton2/plugins:
 ```shell
