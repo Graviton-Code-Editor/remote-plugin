@@ -20,6 +20,7 @@ Contributions are welcomed!
 * [] Create line on other clients when creating a new line
 * [] Ability to disconnect
 * [] Implement `watchDir` on ExplorerProvider
+* [] Fix, sharing more than 1 terminal at once doesn't work properly
 
 ## 🕹 Developing
 Clone the repo to your .graviton2/plugins:
