@@ -10,7 +10,6 @@ import readFile from './src/events/read_file'
 import writeFile from './src/events/write_file'
 import userJoined from './src/events/user_joined'
 import configDialog from './src/config_dialog'
-import createTabEditor from './src/tab_editor'
 
 import { sanitizePath, getExtension }from './src/utils'
 
@@ -26,6 +25,7 @@ class Instance {
 		this.password = createHash('sha256').update(password).digest()
 		this.emitter = emitter
 		this.emitter.data = this
+		this.sharedFolders = {}
 		this.conn = new WebSocket('wss://graviton-api.herokuapp.com/websockets')
 		this.roomcode = `${this.room}##${password}`
 		this.encryptor = simpleEncryptor(password)
@@ -102,9 +102,8 @@ class Instance {
 
 export function entry(API){
 	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
-	const emitter = new puffin.state({})
+	const emitter = new puffin.state()
 	createSidePanel(emitter,API)
-	console.log(Notification)
 	RunningConfig.emit('addLocalTerminalAccessory',{
 		component(state){
 			
@@ -132,7 +131,7 @@ export function entry(API){
 			return puffin.element`<button :click="${goShare}">share</button>`
 		}
 	})
-		
+	
 	new StatusBarItem({
 		label: 'Remote',
 		action(e){
@@ -207,19 +206,35 @@ function handleEvents(emitter,API){
 		})
 	})
 
+	const validPath = (path) => {
+		const sanitizedPath = sanitizePath(path)
+		return new Promise((res) => {
+			Object.keys(emitter.data.sharedFolders).find(p => {
+				if(sanitizedPath.match(p)){
+					res(true)
+					return
+				}
+			})
+			res(false)
+		})
+	}
+	
 	emitter.on('room/listFolder', async ({ folderPath }) => {
+		if(!await validPath(folderPath)) return
 		listFolder({
 			emitter,
 			folderPath
 		})
 	})
 	emitter.on('room/getFileContent', async ({ filePath }) => {
+		if(!await validPath(filePath)) return
 		readFile({
 			emitter,
 			filePath
 		})
 	})
 	emitter.on('room/writeFileContent', async ({ filePath, fileContent }) => {
+		if(!await validPath(filePath)) return
 		writeFile({
 			emitter,
 			filePath,
@@ -243,14 +258,6 @@ function handleEvents(emitter,API){
 			})
 		})
 	})
-	RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
-		emitter.emit('message',{
-			type: 'openedFolder',
-			content: {
-				folderPath: sanitizePath(folderPath)
-			}
-		})
-	})
 	RunningConfig.on('aTabHasBeenCreated', ({ directory, client, instance, tabElement }) => {
 		tabCreated({
 			emitter,
@@ -264,27 +271,31 @@ function handleEvents(emitter,API){
 }
 
 const createSidePanel = (emitter,API) => {
-	const { puffin, SidePanel, Explorer, FilesExplorer } = API
+	const { puffin, SidePanel, Explorer, FilesExplorer, RunningConfig } = API
 	const iconStyle = puffin.style`
 		& > * {
-			stroke: var(--iconFill)
+			stroke: var(--iconFill);
+		}
+		& > path {
+			fill: var(--iconFill)
 		}
 	`
 	new SidePanel({
 		icon(){
 			return  puffin.element`
-				<svg class="${iconStyle}" width="38" height="28" viewBox="0 0 38 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-					<rect x="1" y="21" width="14" height="6" rx="2" stroke-width="3"/>
-					<circle cx="7.69391" cy="13.7688" r="4.49565" stroke-width="3"/>
-					<rect x="24" y="13" width="13" height="6" rx="2" stroke-width="3"/>
-					<circle cx="30.3061" cy="5.49565" r="4.49565"stroke-width="3"/>
-					<path d="M14.597 9.86821L17.2567 7.14069L19.6369 8.92586L22.6122 7.14069" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+				<svg class="${iconStyle}" width="26" height="22" viewBox="0 0 26 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<rect x="1" y="17.2105" width="9.36842" height="3.68421" rx="1.84211" stroke-width="2"/>
+					<circle cx="5.46677" cy="11.7831" r="2.9048" stroke-width="2"/>
+					<rect x="16" y="12.5263" width="8.6579" height="3.68421" rx="1.84211"stroke-width="2"/>
+					<circle cx="20.1912" cy="6.9048" r="2.9048" stroke-width="2"/>
+					<path d="M1 2.5C1 1.11929 2.11929 0 3.5 0H11.0153C12.1114 0 13 0.888575 13 1.98469V1.98469C13 2.326 13.055 2.66507 13.163 2.98887L13.2746 3.32366C13.4247 3.77399 13.6065 4.21309 13.8188 4.63766L14.2615 5.52295C14.4827 5.96543 13.9957 6.42612 13.5662 6.18068L12.6529 5.65878C11.8974 5.22708 11.0423 5 10.1722 5H7H3.5C2.11929 5 1 3.88071 1 2.5V2.5Z" />
 				</svg>
 			`
 		},
 		panel(){
 			function mounted(){
-				let activeUsers = {}
+				const activeUsers = {}
+				const openedFolders = {}
 				const getCurrentUsers = () => {
 					return Object.keys(activeUsers).map( userid => {
 						const { username, usercolor, isMe } = activeUsers[userid]
@@ -373,13 +384,77 @@ const createSidePanel = (emitter,API) => {
 									setItems([])
 								})
 							}
+						},{
+							label: 'Folders',
+							icon: 'folder.closed',
+							mounted({ setItems }){
+								RunningConfig.on('addFolderToRunningWorkspace', ({ folderPath }) => {
+									let fPath = sanitizePath(folderPath)
+									openedFolders[fPath] = false
+									setItems(getFoldersItems(setItems))
+								})
+							},
+							items: []
 						}
 					]
 				})
 				puffin.render(usersExplorer,this.querySelector("#users"))
-
+				
+			
+				function getFoldersItems(setItems){
+					return Object.keys(openedFolders).map((path) => {
+						let state = openedFolders[path]
+						return {
+							label: path,
+							decorator:{
+								label: state ? '🔊' : ''
+							},
+							action(e, { setLabel, setDecorator }){
+								state = !state
+								const sanitizedPath = sanitizePath(path)
+								openedFolders[path] = state
+								if(state){
+									emitter.data.sharedFolders[sanitizedPath] = state
+									emitter.emit('message',{
+										type: 'openedFolder',
+										content: {
+											folderPath: sanitizedPath
+										}
+									})
+									setDecorator({
+										label: '🔊'
+									})
+								}else{
+									delete emitter.data.sharedFolders[sanitizedPath]
+									emitter.emit('message',{
+										type: 'closedFolder',
+										content: {
+											folderPath: sanitizedPath
+										}
+									})
+									setDecorator({
+										label: ''
+									})
+								}
+								setItems(getFoldersItems(setItems))
+							}
+						}
+					})
+				}
+				let sharedExplorers = []
+				
+				emitter.on('room/closedFolder', async ({ folderPath }) => {
+					console.log(folderPath, sharedExplorers)
+					sharedExplorers.forEach(explorer => {
+						if(explorer.projectPath === folderPath){
+							explorer.itemElement.instance.itemState.emit('destroyed')
+						}
+					})
+				})
+				
 				emitter.on('room/openedFolder', async ({ folderPath, senderUserid, senderUsername }) => {
-					new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
+					
+					const explorerInstance = new FilesExplorer(folderPath, folderPath, document.getElementById('explorer_panel'), 0, false, null, {
 						provider: {
 							decorator:{
 								text: `remote@${senderUsername}`
@@ -423,9 +498,9 @@ const createSidePanel = (emitter,API) => {
 							}
 						}
 					})
+					sharedExplorers.push(explorerInstance)
 				})
 			}
-			
 			const wrapperStyle = puffin.style`
 				& p {
 					color: var(--textColor);
