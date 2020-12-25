@@ -3,7 +3,7 @@
 	"id": "remote-plugin",
 	"description": "Remote Live Coding",
 	"author": "Marc Espín Sanz",
-	"version": "0.1.8",
+	"version": "0.2.0",
 	"main": "index.js",
 	"mainSrc": "index.js",
 	"mainDev": "dist/index.js",

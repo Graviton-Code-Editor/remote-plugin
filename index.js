@@ -101,34 +101,67 @@ class Instance {
 
 
 export function entry(API){
-	const { puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
+	const { drac: { Button }, puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
 	const emitter = new puffin.state()
 	createSidePanel(emitter,API)
 	RunningConfig.emit('addLocalTerminalAccessory',{
 		component(state){
+			const terminalID = shortid.generate()
+			let sharing = false
 			
-			function goShare(){
-				emitter.emit('message',{
-					type: 'terminalShared',
-					content: {}
-				})
-				emitter.on("room/terminalOutput",({ data }) => {
-					state.emit("data", data);
-				}),
-					emitter.on("room/terminalBreakLine", () => {
-					state.emit("breakLine");
-				}),
-				state.on('write', (data) => {
+			let terminalOutputListener
+			let terminalBrokenLineListener
+			let terminalInputListener
+
+			function onClick(){
+				sharing = !sharing
+
+				if(sharing){
 					emitter.emit('message',{
-						type: 'terminalUpdated',
+						type: 'terminalShared',
 						content: {
-							data
+							terminalID
 						}
 					})
-				})
+					terminalOutputListener = emitter.on('room/terminalOutput',({ data, terminalID: senderTerminalID }) => {
+						if(senderTerminalID === terminalID){
+							state.emit('data', data)
+						}
+						
+					})
+					terminalBrokenLineListener = emitter.on('room/terminalBreakLine', ({ terminalID: senderTerminalID }) => {
+						if(senderTerminalID === terminalID){
+							state.emit('breakLine')
+						}
+					})
+					terminalInputListener = state.on('write', (data) => {
+						emitter.emit('message',{
+							type: 'terminalUpdated',
+							content: {
+								data,
+								terminalID
+							}
+						})
+					})
+				}else{
+					emitter.emit('message',{
+						type: 'terminalUnshared',
+						content: {
+							terminalID
+						}
+					})
+					terminalOutputListener.cancel()
+					terminalBrokenLineListener.cancel()
+					terminalInputListener.cancel()
+				}
+				this.update()
 			}
 			
-			return puffin.element`<button :click="${goShare}">share</button>`
+			return puffin.element({
+				components:{
+					Button
+				}
+			})`<Button :click="${onClick}">${() => sharing ? 'Unshare' : 'Share'}</Button>`
 		}
 	})
 	
@@ -175,12 +208,12 @@ export function entry(API){
 function handleEvents(emitter,API){
 	const { RunningConfig } = API
 	
-	emitter.on('room/terminalShared', async ({ senderUsername }) => {
+	emitter.on('room/terminalShared', async ({ senderUsername, terminalID: originalTerminalID }) => {
 		RunningConfig.emit('registerTerminalShell',{
-			name: `remote@${senderUsername}`,
+			name: `remote:${originalTerminalID}@${senderUsername}`,
 			onCreated(state){
-				emitter.on('room/terminalUpdated',({ data, senderUsername: terminalAuthor }) => {
-					if(senderUsername === terminalAuthor){
+				emitter.on('room/terminalUpdated',({ data, senderUsername: terminalAuthor, terminalID }) => {
+					if(senderUsername === terminalAuthor && originalTerminalID === terminalID){
 						state.emit('write', data)
 					}
 				})
@@ -189,7 +222,9 @@ function handleEvents(emitter,API){
 					if(key === 'Enter'){
 						emitter.emit('message', {
 							type: 'terminalBreakLine',
-							content: {}
+							content: {
+								terminalID: originalTerminalID
+							}
 						})
 					}
 				})
@@ -198,11 +233,18 @@ function handleEvents(emitter,API){
 					emitter.emit('message', {
 						type: 'terminalOutput',
 						content:{
-							data
+							data,
+							terminalID: originalTerminalID
 						}
 					})
 				})
 			}
+		})
+	})
+	
+	emitter.on('room/terminalUnshared', async ({ senderUsername, terminalID: originalTerminalID }) => {
+		RunningConfig.emit('unregisterTerminalShell',{
+			name: `remote:${originalTerminalID}@${senderUsername}`
 		})
 	})
 
