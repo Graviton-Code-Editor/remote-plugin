@@ -104,10 +104,10 @@ export function entry(API){
 	const { drac: { Button }, puffin, StatusBarItem, ContextMenu, Notification, RunningConfig } = API 
 	const emitter = new puffin.state()
 	createSidePanel(emitter,API)
+	let sharing = false
 	RunningConfig.emit('addLocalTerminalAccessory',{
-		component(state){
+		menu(state){
 			const terminalID = shortid.generate()
-			let sharing = false
 			
 			let terminalOutputListener
 			let terminalBrokenLineListener
@@ -154,14 +154,24 @@ export function entry(API){
 					terminalBrokenLineListener.cancel()
 					terminalInputListener.cancel()
 				}
-				this.update()
 			}
 			
-			return puffin.element({
-				components:{
-					Button
-				}
-			})`<Button :click="${onClick}">${() => sharing ? 'Unshare' : 'Share'}</Button>`
+			if(sharing){
+				return [
+					{
+						label: 'Unshare',
+						action: onClick
+					}
+				]
+			} else {
+				return [
+					{
+						label: 'Share',
+						action: onClick
+					}
+				]
+			}
+			
 		}
 	})
 	
