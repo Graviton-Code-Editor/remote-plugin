@@ -19,7 +19,7 @@
 		"strong-cryptor": "^2.2.0"
 	},
 	"devDependencies": {
-		"@gveditor/sdk": "^0.4.5",
+		"@gveditor/sdk": "^0.5.1",
 		"lodash": "^4.17.19"
 	}
 }
