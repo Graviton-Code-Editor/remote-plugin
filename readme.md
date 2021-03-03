@@ -29,17 +29,17 @@ git clone https://github.com/Graviton-Code-Editor/remote-plugin.git
 
 Install dependencies:
 ```shell
-npm install
+yarn
 ```
 
 Watch for changes (development):
 ```shell
-npm run watch
+yarn run watch
 ```
 
 Build (optional):
 ```shell
-npm run build
+yarn run build
 ```
 
 Made by Marc Espín Sanz.
